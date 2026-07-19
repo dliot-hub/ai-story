@@ -1,0 +1,1541 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Story Weaver - 互动小说</title>
+<style>
+/* ========================================
+   CSS 变量 & 全局
+   ======================================== */
+:root {
+  --bg: #0f0f1a;
+  --surface: #1a1a2e;
+  --surface-hover: #252540;
+  --accent: #c9a96e;
+  --accent-glow: #d4b87a;
+  --text: #e4e4ec;
+  --text-secondary: #8888a0;
+  --border: #2a2a45;
+  --option-bg: #1e1e35;
+  --option-hover: #282845;
+  --option-border: #3a3a60;
+  --danger: #e0556a;
+  --success: #5ec49e;
+  --sidebar-w: 280px;
+  --radius: 10px;
+  --radius-sm: 6px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh; height: 100dvh; display: flex; overflow: hidden; line-height: 1.7;
+}
+
+/* ========================================
+   侧边栏
+   ======================================== */
+.sidebar {
+  width: var(--sidebar-w); min-width: var(--sidebar-w);
+  background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; height: 100vh; height: 100dvh; z-index: 10;
+  transition: transform 0.3s ease;
+}
+.sidebar-header { padding: 20px 16px 12px; border-bottom: 1px solid var(--border); }
+.sidebar-header h1 { font-size: 1.15rem; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+.sidebar-header h1 .icon { font-size: 1.35rem; }
+
+.btn-new-card {
+  width: 100%; margin-top: 14px; padding: 10px 0;
+  background: var(--accent); color: #1a1a2e; border: none; border-radius: var(--radius-sm);
+  font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+}
+.btn-new-card:hover { background: var(--accent-glow); transform: translateY(-1px); }
+
+/* 搜索 */
+.search-box { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+.search-box input {
+  width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 0.85rem; outline: none;
+}
+.search-box input:focus { border-color: var(--accent); }
+.search-box input::placeholder { color: var(--text-secondary); }
+
+/* 卡片列表 */
+.card-list { flex: 1; overflow-y: auto; padding: 8px; }
+.card-list::-webkit-scrollbar { width: 4px; }
+.card-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.card-item {
+  padding: 12px 14px; border-radius: var(--radius-sm); cursor: pointer; margin-bottom: 2px;
+  transition: all 0.15s; position: relative;
+}
+.card-item:hover { background: var(--surface-hover); }
+.card-item.active { background: var(--surface-hover); border-left: 3px solid var(--accent); padding-left: 11px; }
+.card-item .card-cover { font-size: 1.3rem; margin-right: 8px; }
+.card-item .card-name { font-size: 0.9rem; font-weight: 600; }
+.card-item .card-meta { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; display: flex; justify-content: space-between; }
+.card-item .card-tags { font-size: 0.7rem; color: var(--accent); margin-top: 3px; }
+.card-item .card-actions { display: none; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); gap: 4px; }
+.card-item:hover .card-actions { display: flex; }
+.card-item .card-actions button {
+  background: var(--surface-hover); border: 1px solid var(--border); color: var(--text-secondary);
+  padding: 3px 7px; border-radius: 4px; cursor: pointer; font-size: 0.7rem;
+}
+.card-item .card-actions button:hover { color: var(--danger); border-color: var(--danger); }
+.card-item .card-actions button.edit-btn:hover { color: var(--accent); border-color: var(--accent); }
+.card-item .card-actions button.export-btn:hover { color: var(--success); border-color: var(--success); }
+
+/* 侧边栏底部 */
+.sidebar-footer { padding: 10px 16px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.btn-settings, .btn-import {
+  background: none; border: 1px solid var(--border); color: var(--text-secondary);
+  padding: 6px 10px; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.75rem; transition: all 0.15s;
+}
+.btn-settings:hover, .btn-import:hover { color: var(--text); border-color: var(--text-secondary); }
+
+/* ========================================
+   主区域
+   ======================================== */
+.main { flex: 1; display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; }
+
+.empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px; }
+.empty-state .icon { font-size: 5rem; margin-bottom: 20px; opacity: 0.6; }
+.empty-state h2 { font-size: 1.5rem; color: var(--text); margin-bottom: 8px; }
+.empty-state p { color: var(--text-secondary); max-width: 440px; font-size: 0.9rem; margin-bottom: 20px; }
+
+.btn-start {
+  padding: 12px 32px; background: var(--accent); color: #1a1a2e; border: none;
+  border-radius: var(--radius); font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+}
+.btn-start:hover { background: var(--accent-glow); }
+
+/* ========================================
+   角色卡表单
+   ======================================== */
+.form-container { flex: 1; overflow-y: auto; padding: 24px 36px 40px; max-width: 760px; margin: 0 auto; width: 100%; }
+.form-container h2 { font-size: 1.3rem; color: var(--accent); margin-bottom: 20px; }
+
+/* 分区 */
+.form-section { margin-bottom: 20px; }
+.form-section-title {
+  font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1.5px;
+  color: var(--accent); margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 6px;
+}
+
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 0.84rem; font-weight: 600; margin-bottom: 5px; color: var(--text-secondary); }
+.form-group label .hint { font-weight: 400; font-size: 0.75rem; }
+.form-group input, .form-group textarea, .form-group select {
+  width: 100%; padding: 10px 14px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 0.9rem;
+  font-family: inherit; outline: none; resize: vertical; transition: border-color 0.2s;
+}
+.form-group textarea { min-height: 60px; line-height: 1.6; }
+.form-group input:focus, .form-group textarea:focus { border-color: var(--accent); }
+.form-group input::placeholder, .form-group textarea::placeholder { color: var(--text-secondary); opacity: 0.5; }
+
+.form-row { display: flex; gap: 14px; }
+.form-row .form-group { flex: 1; }
+
+/* 封面选择器 */
+.cover-picker { display: flex; gap: 12px; align-items: flex-start; }
+.cover-preview {
+  width: 60px; height: 60px; border-radius: var(--radius-sm); border: 2px solid var(--border);
+  display: flex; align-items: center; justify-content: center; font-size: 2rem;
+  background: var(--bg); cursor: pointer; transition: border-color 0.2s;
+}
+.cover-preview:hover { border-color: var(--accent); }
+.cover-emoji-grid {
+  display: flex; flex-wrap: wrap; gap: 5px; flex: 1;
+}
+.cover-emoji-grid button {
+  width: 36px; height: 36px; border-radius: 6px; border: 1px solid transparent;
+  background: var(--bg); font-size: 1.2rem; cursor: pointer; transition: all 0.15s;
+  display: flex; align-items: center; justify-content: center;
+}
+.cover-emoji-grid button:hover { border-color: var(--accent); background: var(--surface-hover); }
+.cover-emoji-grid button.selected { border-color: var(--accent); background: var(--option-hover); }
+
+/* 故事背景 textarea 更大 */
+#cardBackground { min-height: 100px; }
+#cardOutline { min-height: 80px; }
+
+/* 世界书 */
+.worldbook-section { margin-top: 8px; }
+.worldbook-entry {
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 14px; margin-bottom: 10px; position: relative;
+}
+.worldbook-entry .wb-row { display: flex; gap: 10px; margin-bottom: 8px; }
+.worldbook-entry .wb-row input { flex: 1; font-size: 0.82rem; padding: 7px 10px; }
+.worldbook-entry .wb-row textarea { flex: 1; font-size: 0.82rem; min-height: 44px; padding: 7px 10px; }
+.btn-remove-wb {
+  position: absolute; top: 8px; right: 8px;
+  background: none; border: 1px solid var(--border); color: var(--text-secondary);
+  width: 24px; height: 24px; border-radius: 50%; cursor: pointer; font-size: 0.8rem;
+  display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+}
+.btn-remove-wb:hover { color: var(--danger); border-color: var(--danger); }
+.btn-add-wb {
+  padding: 8px 18px; background: transparent; border: 1px dashed var(--border);
+  color: var(--text-secondary); border-radius: var(--radius-sm); cursor: pointer;
+  font-size: 0.82rem; transition: all 0.15s;
+}
+.btn-add-wb:hover { border-color: var(--accent); color: var(--accent); }
+
+.form-actions { display: flex; gap: 12px; margin-top: 24px; padding-bottom: 30px; }
+.btn-primary {
+  padding: 10px 24px; background: var(--accent); color: #1a1a2e; border: none;
+  border-radius: var(--radius-sm); font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+}
+.btn-primary:hover { background: var(--accent-glow); }
+.btn-secondary {
+  padding: 10px 24px; background: transparent; border: 1px solid var(--border);
+  color: var(--text-secondary); border-radius: var(--radius-sm); font-size: 0.9rem; cursor: pointer; transition: all 0.2s;
+}
+.btn-secondary:hover { color: var(--text); border-color: var(--text-secondary); }
+
+/* ========================================
+   游戏界面
+   ======================================== */
+.game-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+.game-topbar {
+  padding: 10px 24px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; background: var(--surface); flex-shrink: 0;
+}
+.game-topbar .story-info { display: flex; align-items: center; gap: 10px; }
+.game-topbar .story-cover { font-size: 1.5rem; }
+.game-topbar .story-name { font-weight: 700; font-size: 0.95rem; color: var(--accent); }
+.game-topbar .story-badge {
+  font-size: 0.7rem; background: var(--option-bg); padding: 3px 10px; border-radius: 20px; color: var(--text-secondary);
+}
+.game-topbar .topbar-actions { display: flex; gap: 6px; }
+.game-topbar .topbar-actions button {
+  background: transparent; border: 1px solid var(--border); color: var(--text-secondary);
+  padding: 5px 12px; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.75rem; transition: all 0.15s;
+}
+.game-topbar .topbar-actions button:hover { color: var(--text); border-color: var(--text-secondary); }
+.game-topbar .topbar-actions button.btn-restart:hover { color: var(--danger); border-color: var(--danger); }
+
+/* 故事滚动区 */
+.story-scroll { flex: 1; overflow-y: auto; padding: 24px 32px 32px; scroll-behavior: smooth; }
+.story-scroll::-webkit-scrollbar { width: 5px; }
+.story-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.story-block { margin-bottom: 26px; animation: fadeIn 0.4s ease; position: relative; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.del-block-btn {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: none; border: 1px solid var(--border); color: var(--text-secondary);
+  padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 0.72rem;
+  margin-left: 4px; vertical-align: middle; transition: all 0.15s;
+}
+.del-block-btn:hover { color: var(--danger); border-color: var(--danger); }
+
+.story-narrative {
+  font-size: 1rem; line-height: 2; color: var(--text);
+  padding: 16px 20px; background: var(--surface); border-radius: var(--radius);
+  border-left: 3px solid var(--accent); white-space: pre-wrap; word-break: break-word;
+}
+.story-narrative.streaming { border-left-color: var(--accent-glow); animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.7; } }
+
+.story-chosen { font-size: 0.82rem; color: var(--accent); padding: 6px 0 6px 20px; font-style: italic; margin-top: 4px; }
+
+/* 选项区 */
+/* 选项区 —— 跟随在叙述文本后面，在 story-scroll 内部渲染 */
+.options-block { margin-top: 14px; }
+.options-block h3 { font-size: 0.78rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+
+/* 多选组合按钮行 */
+.multi-select-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.multi-select-pill {
+  padding: 4px 10px; background: var(--option-bg); border: 1px solid var(--option-border);
+  border-radius: 14px; color: var(--text-secondary); font-size: 0.72rem; cursor: pointer;
+  transition: all 0.15s; font-family: inherit;
+}
+.multi-select-pill:hover { border-color: var(--accent); color: var(--accent); background: var(--option-hover); }
+
+/* 复制按钮 */
+.copy-btn {
+  display: inline-block; opacity: 0; background: none; border: 1px solid var(--border);
+  color: var(--text-secondary); padding: 2px 9px; border-radius: 4px; cursor: pointer;
+  font-size: 0.7rem; margin-left: 8px; vertical-align: middle; transition: all 0.2s;
+}
+.story-narrative:hover .copy-btn,
+.story-chosen:hover .copy-btn,
+.option-btn:hover .copy-btn { opacity: 1; }
+.copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+.copy-btn.copied { color: var(--success); border-color: var(--success); }
+.option-btn {
+  display: block; width: 100%; text-align: left; padding: 12px 18px; margin-bottom: 8px;
+  background: var(--option-bg); border: 1px solid var(--option-border); border-radius: var(--radius);
+  color: var(--text); font-size: 0.9rem; cursor: pointer; transition: all 0.2s; font-family: inherit; line-height: 1.5;
+}
+.option-btn:hover { background: var(--option-hover); border-color: var(--accent); transform: translateX(3px); }
+.option-btn .opt-letter {
+  display: inline-block; width: 24px; height: 24px; line-height: 24px; text-align: center;
+  background: var(--accent); color: #1a1a2e; border-radius: 50%; font-weight: 700; font-size: 0.75rem; margin-right: 10px;
+}
+
+/* 固定底部输入栏 */
+.input-bar {
+  flex-shrink: 0; padding: 12px 24px calc(14px + env(safe-area-inset-bottom, 8px));
+  background: #1f1f38; border-top: 2px solid var(--accent); display: flex; gap: 10px;
+}
+.input-bar input {
+  flex: 1; padding: 11px 16px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text); font-size: 0.92rem; outline: none; font-family: inherit;
+}
+.input-bar input:focus { border-color: var(--accent); }
+.input-bar input::placeholder { color: var(--text-secondary); opacity: 0.5; }
+.input-bar button {
+  padding: 10px 20px; background: var(--accent); color: #1a1a2e; border: none;
+  border-radius: var(--radius); font-weight: 600; cursor: pointer; font-size: 0.9rem; white-space: nowrap; transition: all 0.2s;
+  flex-shrink: 0;
+}
+.input-bar button:hover { background: var(--accent-glow); }
+.input-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 打字动画 */
+.typing-indicator { display: flex; gap: 5px; padding: 16px 20px; }
+.typing-indicator span { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; animation: bounce 1.2s infinite; }
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-8px); } }
+
+/* ========================================
+   弹窗
+   ======================================== */
+.modal-overlay {
+  display: none; position: fixed; top:0; left:0; right:0; bottom:0;
+  background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center;
+}
+.modal-overlay.show { display: flex; }
+.modal {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 28px; max-width: 480px; width: 90%;
+}
+.modal h3 { font-size: 1.1rem; color: var(--accent); margin-bottom: 18px; }
+.modal .form-group { margin-bottom: 14px; }
+.modal .form-actions { margin-top: 8px; padding-bottom: 0; display: flex; gap: 12px; }
+
+.api-status { font-size: 0.78rem; margin-top: -6px; margin-bottom: 10px; }
+.api-status.ok { color: var(--success); }
+.api-status.err { color: var(--danger); }
+
+.confirm-overlay {
+  display: none; position: fixed; top:0; left:0; right:0; bottom:0;
+  background: rgba(0,0,0,0.7); z-index: 110; align-items: center; justify-content: center;
+}
+.confirm-overlay.show { display: flex; }
+.confirm-box {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 24px; max-width: 380px; width: 90%; text-align: center;
+}
+.confirm-box p { margin-bottom: 18px; color: var(--text); font-size: 0.95rem; }
+.confirm-box .confirm-actions { display: flex; gap: 10px; justify-content: center; }
+
+/* 手机菜单 */
+.menu-toggle {
+  display: none; position: fixed; top: 12px; left: 12px; z-index: 50;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  width: 38px; height: 38px; border-radius: var(--radius-sm); font-size: 1.2rem; cursor: pointer;
+  align-items: center; justify-content: center;
+}
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  padding: 10px 24px; border-radius: var(--radius); font-size: 0.85rem;
+  z-index: 200; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+}
+.toast.show { opacity: 1; }
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .sidebar { position: fixed; left:0; top:0; transform: translateX(-100%); box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
+  .sidebar.open { transform: translateX(0); }
+  .menu-toggle { display: flex; }
+  .form-container { padding: 16px; }
+  .story-scroll { padding: 16px; }
+  .options-block { padding: 0 4px; }
+  .input-bar { padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 8px)); }
+  .game-topbar { padding: 8px 16px; flex-wrap: wrap; gap: 6px; }
+  .cover-emoji-grid { gap: 3px; }
+  .cover-emoji-grid button { width: 30px; height: 30px; font-size: 1rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- 手机菜单 -->
+<button class="menu-toggle" onclick="toggleSidebar()" title="菜单">☰</button>
+
+<!-- ========== 侧边栏 ========== -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <h1><span class="icon">📖</span>Story Weaver</h1>
+    <button class="btn-new-card" onclick="UI.showCreateForm()">＋ 创建新角色卡</button>
+  </div>
+  <div class="search-box">
+    <input type="text" id="searchInput" placeholder="🔍 搜索角色卡..." oninput="UI.renderCardList()">
+  </div>
+  <div class="card-list" id="cardList"></div>
+  <div class="sidebar-footer">
+    <button class="btn-import" onclick="ImportExport.importCard()">📥 导入</button>
+    <span style="font-size:0.68rem;color:var(--text-secondary)">DeepSeek</span>
+    <button class="btn-settings" onclick="UI.showSettings()">⚙️</button>
+  </div>
+</aside>
+
+<!-- ========== 主区域 ========== -->
+<main class="main" id="mainContent"></main>
+
+<!-- ========== 设置弹窗 ========== -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <h3>⚙️ API 设置</h3>
+    <div class="form-group">
+      <label>DeepSeek API Key</label>
+      <input type="password" id="apiKeyInput" placeholder="sk-...">
+      <div class="api-status" id="apiStatus"></div>
+    </div>
+    <div class="form-group">
+      <label>模型</label>
+      <select id="modelSelect">
+        <option value="deepseek-chat">deepseek-chat</option>
+        <option value="deepseek-reasoner">deepseek-reasoner</option>
+      </select>
+    </div>
+    <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:12px;">
+      💡 Key 仅存浏览器本地。<br>
+      获取：<a href="https://platform.deepseek.com/api_keys" target="_blank" style="color:var(--accent);">platform.deepseek.com/api_keys</a>
+    </div>
+    <div class="form-actions">
+      <button class="btn-primary" onclick="Settings.save()">💾 保存</button>
+      <button class="btn-secondary" onclick="UI.closeSettings()">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 确认弹窗 ========== -->
+<div class="confirm-overlay" id="confirmModal">
+  <div class="confirm-box">
+    <p id="confirmMsg"></p>
+    <div class="confirm-actions">
+      <button class="btn-primary" id="confirmYes">确认</button>
+      <button class="btn-secondary" id="confirmNo">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- 隐藏的文件选择器 -->
+<input type="file" id="importFileInput" accept=".json" style="display:none" onchange="ImportExport.handleImport(event)">
+
+<script>
+/* ========================================
+   常量
+   ======================================== */
+const COVER_EMOJIS = [
+  '🧙‍♂️','🧝‍♀️','🐉','⚔️','🛡️','🏰','🔮','✨','🗡️','🌙','🪄',
+  '🤖','🚀','👾','🌌','🛸','⚡','🔬','🛰️','💻',
+  '🏙️','🌃','💼','🎭','🔍','🕵️','🎓','📚',
+  '⛩️','🎋','🏯','🌸','🍂','🎴','🍵','📜',
+  '👻','💀','🕯️','🏚️','🌑','🔪','🩸',
+  '💕','💘','🌹','💌','🎀','💝','💗',
+  '🗺️','🧭','⛰️','🌊','🏴‍☠️','🎯','💡','🔥','🌟'
+];
+
+/* ========================================
+   数据管理
+   ======================================== */
+const Storage = {
+  get(key, fallback = null) {
+    try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : fallback; }
+    catch { return fallback; }
+  },
+  set(key, value) { localStorage.setItem(key, JSON.stringify(value)); },
+  getCards() { return this.get('story_cards_v2', []); },
+  saveCards(cards) { this.set('story_cards_v2', cards); },
+  getCard(id) { return this.getCards().find(c => c.id === id) || null; },
+
+  upsertCard(card) {
+    const cards = this.getCards();
+    const idx = cards.findIndex(c => c.id === card.id);
+    if (idx >= 0) {
+      cards[idx] = { ...cards[idx], ...card, updatedAt: Date.now() };
+    } else {
+      card.createdAt = Date.now(); card.updatedAt = Date.now();
+      cards.push(card);
+    }
+    this.saveCards(cards);
+    return card;
+  },
+
+  deleteCard(id) {
+    this.saveCards(this.getCards().filter(c => c.id !== id));
+    if (this.get('current_card_id') === id) this.set('current_card_id', null);
+  },
+
+  getApiKey() { return this.get('api_key', ''); },
+  setApiKey(key) { this.set('api_key', key); },
+  getModel() { return this.get('model', 'deepseek-chat'); },
+  setModel(model) { this.set('model', model); }
+};
+
+/* ========================================
+   导出卡片（不含故事进度）
+   ======================================== */
+function exportCardForShare(card) {
+  return {
+    name: card.name,
+    cover: card.cover || '📖',
+    identity: card.identity || '',
+    appearance: card.appearance || '',
+    personality: card.personality || '',
+    languageStyle: card.languageStyle || '',
+    background: card.background || '',
+    customSettings: card.customSettings || '',
+    outline: card.outline || '',
+    memoryRounds: card.memoryRounds || 20,
+    worldBook: card.worldBook || []
+  };
+}
+
+/* ========================================
+   API 模块
+   ======================================== */
+const API = {
+  // 构建世界书注入内容
+  buildWorldBookContext(card, recentMessages) {
+    if (!card.worldBook || card.worldBook.length === 0) return '';
+
+    // 收集最近的对话文本（用于关键词匹配）
+    const recentText = recentMessages.map(m => m.content).join(' ').toLowerCase();
+    const triggered = [];
+
+    for (const entry of card.worldBook) {
+      const keywords = (entry.keywords || '').split(/[,，、]/).map(k => k.trim().toLowerCase()).filter(k => k.length > 0);
+      for (const kw of keywords) {
+        if (recentText.includes(kw)) {
+          triggered.push(entry);
+          break;
+        }
+      }
+    }
+
+    if (triggered.length === 0) return '';
+
+    return '\n\n【世界书——当前触发的世界设定】\n' +
+      triggered.map((e, i) => `${i + 1}. ${e.content}`).join('\n');
+  },
+
+  // 构建系统提示词
+  buildSystemPrompt(card, historyMessages) {
+    const parts = [];
+
+    parts.push('你是一个专业的互动小说叙述者。请根据以下设定，为玩家创造一个沉浸式的互动故事。');
+
+    // 角色设定
+    parts.push('\n【角色身份】\n' + (card.identity || card.roleInfo || '未指定'));
+    if (card.appearance) parts.push('\n【外貌描述】\n' + card.appearance);
+    if (card.personality) parts.push('\n【性格标签】\n' + card.personality);
+    if (card.languageStyle) parts.push('\n【语言风格】\n' + card.languageStyle);
+
+    // 故事设定
+    parts.push('\n【故事背景】\n' + (card.background || '未指定'));
+    if (card.outline) parts.push('\n【故事大纲】\n' + card.outline);
+    if (card.customSettings) parts.push('\n【自定义设定/特殊规则】\n' + card.customSettings);
+
+    // 世界书
+    const worldBookCtx = this.buildWorldBookContext(card, historyMessages);
+    if (worldBookCtx) parts.push(worldBookCtx);
+
+    // 叙述规则
+    parts.push(`
+【叙述规则】
+1. 根据玩家的选择推进剧情，每次叙述200-400字，要有画面感和代入感
+2. 严格以第二人称（你）视角叙述
+3. 在叙述结束后，另起一行打出"---"，然后给出恰好4个选项
+4. 选项格式：
+---
+A. 选项内容
+B. 选项内容
+C. 选项内容
+D. 选项内容
+5. 四个选项要有明确不同的行动方向
+6. 如果玩家输入非ABCD自定义内容，以玩家的输入为准推进
+7. 始终保持在故事世界观内的逻辑一致性`);
+
+    return parts.join('\n');
+  },
+
+  // 构建消息数组
+  buildMessages(card, userInput) {
+    const messages = [];
+    const history = card.storyHistory || [];
+    const rounds = card.memoryRounds || 20;
+    const recentHistory = history.slice(-rounds);
+
+    // 收集历史消息用于世界书匹配
+    const historyMessages = [];
+    for (const round of recentHistory) {
+      historyMessages.push({ role: 'user', content: round.chosen });
+      historyMessages.push({ role: 'assistant', content: round.fullResponse });
+    }
+    historyMessages.push({ role: 'user', content: userInput });
+
+    // 系统提示词（含匹配到的世界书条目）
+    messages.push({ role: 'system', content: this.buildSystemPrompt(card, historyMessages) });
+
+    // 历史对话
+    for (const round of recentHistory) {
+      messages.push({ role: 'user', content: round.chosen });
+      messages.push({ role: 'assistant', content: round.fullResponse });
+    }
+
+    // 当前输入
+    messages.push({ role: 'user', content: userInput });
+
+    return messages;
+  },
+
+  // 流式调用
+  async streamChat(card, userInput, onChunk, onDone, onError) {
+    const apiKey = Storage.getApiKey();
+    if (!apiKey) { onError('请先在设置中填入 DeepSeek API Key'); return; }
+
+    const messages = this.buildMessages(card, userInput);
+    const model = Storage.getModel();
+
+    let response;
+    try {
+      response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({ model, messages, stream: true, temperature: 0.85 })
+      });
+    } catch (e) {
+      onError('网络请求失败：' + e.message); return;
+    }
+
+    if (!response.ok) {
+      let errMsg = `API 错误 (${response.status})`;
+      try { const eb = await response.json(); errMsg = eb.error?.message || errMsg; } catch {}
+      onError(errMsg); return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n'); buffer = lines.pop() || '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+          const ds = trimmed.slice(6);
+          if (ds === '[DONE]') continue;
+          try {
+            const p = JSON.parse(ds);
+            const c = p.choices?.[0]?.delta?.content;
+            if (c) onChunk(c);
+          } catch {}
+        }
+      }
+    } catch (e) { onError('读取流失败：' + e.message); return; }
+    onDone();
+  },
+
+  // 解析叙述 + 选项
+  parseResponse(fullText) {
+    const sepIndex = fullText.lastIndexOf('---');
+    let narrative, optionsRaw;
+    if (sepIndex >= 0) {
+      narrative = fullText.substring(0, sepIndex).trim();
+      optionsRaw = fullText.substring(sepIndex + 3).trim();
+    } else {
+      narrative = fullText.trim(); optionsRaw = '';
+    }
+
+    const options = [];
+    const optRegex = /^([A-D])[\.\、\)）]\s*(.+)$/m;
+    const lines = optionsRaw.split('\n');
+    for (const line of lines) {
+      const m = line.trim().match(optRegex);
+      if (m) options.push({ letter: m[1], text: m[2].trim() });
+    }
+
+    // 回退解析
+    if (options.length < 2) {
+      const fallback = optionsRaw.split('\n').map(l => l.trim()).filter(l => l.length > 2 && !l.startsWith('---')).slice(0, 4);
+      if (fallback.length >= 2) {
+        const letters = ['A','B','C','D'];
+        for (let i = 0; i < fallback.length; i++) {
+          options.push({ letter: letters[i], text: fallback[i].replace(/^[A-D][\.\、\)）]\s*/, '') });
+        }
+      }
+    }
+    return { narrative, options };
+  }
+};
+
+/* ========================================
+   UI 模块
+   ======================================== */
+const UI = {
+  currentCardId: null,
+  isStreaming: false,
+  tempCover: '📖',           // 表单中临时选的封面
+  tempWorldBook: [],          // 表单中临时编辑的世界书
+
+  // ---- 整体渲染 ----
+  render() {
+    const cardId = Storage.get('current_card_id');
+    if (cardId && Storage.getCard(cardId)) {
+      this.currentCardId = cardId;
+      this.renderGame();
+    } else {
+      this.renderDefault();
+    }
+    this.renderCardList();
+    this.updateApiStatus();
+  },
+
+  renderDefault() {
+    const main = document.getElementById('mainContent');
+    const cards = Storage.getCards();
+    this.currentCardId = null;
+    Storage.set('current_card_id', null);
+
+    if (cards.length === 0) {
+      main.innerHTML = `
+        <div class="empty-state">
+          <div class="icon">📜</div>
+          <h2>开启你的故事</h2>
+          <p>创建一张角色卡，设定身份、外貌、性格和世界观，AI 为你呈现独一无二的互动故事。</p>
+          <button class="btn-start" onclick="UI.showCreateForm()">✨ 创建第一张角色卡</button>
+          <p style="margin-top:16px;font-size:0.8rem;color:var(--text-secondary);">
+            已有角色卡 JSON？<a href="javascript:ImportExport.importCard()" style="color:var(--accent);">导入</a>
+          </p>
+        </div>`;
+    } else {
+      main.innerHTML = `
+        <div class="empty-state">
+          <div class="icon">👈</div>
+          <h2>选择或创建角色卡</h2>
+          <p>从左侧列表选择故事继续冒险，或创建新的角色卡。</p>
+          <button class="btn-start" onclick="UI.showCreateForm()">＋ 创建新角色卡</button>
+        </div>`;
+    }
+  },
+
+  // ========== 侧边栏 ==========
+  renderCardList() {
+    const container = document.getElementById('cardList');
+    const searchTerm = (document.getElementById('searchInput')?.value || '').toLowerCase();
+    let cards = Storage.getCards();
+    cards.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+    if (searchTerm) {
+      cards = cards.filter(c =>
+        c.name.toLowerCase().includes(searchTerm) ||
+        (c.personality || '').toLowerCase().includes(searchTerm) ||
+        (c.background || '').toLowerCase().includes(searchTerm)
+      );
+    }
+
+    if (cards.length === 0) {
+      container.innerHTML = searchTerm
+        ? `<div style="padding:24px;text-align:center;color:var(--text-secondary);font-size:0.85rem;">没有匹配的角色卡</div>`
+        : `<div style="padding:24px;text-align:center;color:var(--text-secondary);font-size:0.85rem;">还没有角色卡<br>点击上方按钮创建</div>`;
+      return;
+    }
+
+    container.innerHTML = cards.map(c => {
+      const rounds = (c.storyHistory || []).length;
+      const tags = c.personality ? c.personality.split(/[,，、]/).slice(0, 3).map(t => t.trim()).filter(Boolean).join(' · ') : '';
+      return `
+        <div class="card-item${c.id === this.currentCardId ? ' active' : ''}" onclick="UI.openCard('${c.id}')">
+          <span class="card-cover">${c.cover || '📖'}</span>
+          <span class="card-name">${this.esc(c.name)}</span>
+          <div class="card-meta"><span>${this.fmtDate(c.updatedAt)}</span><span>${rounds} 回合</span></div>
+          ${tags ? `<div class="card-tags">${this.esc(tags)}</div>` : ''}
+          <div class="card-actions" onclick="event.stopPropagation()">
+            <button class="export-btn" onclick="ImportExport.exportCard('${c.id}')" title="导出JSON">📤</button>
+            <button class="edit-btn" onclick="UI.showEditForm('${c.id}')" title="编辑">✎</button>
+            <button onclick="UI.confirmDelete('${c.id}')" title="删除">✕</button>
+          </div>
+        </div>`;
+    }).join('');
+  },
+
+  // ========== 角色卡表单 ==========
+  showCreateForm() {
+    this.currentCardId = null;
+    Storage.set('current_card_id', null);
+    this.tempCover = '📖';
+    this.tempWorldBook = [];
+    const main = document.getElementById('mainContent');
+    main.innerHTML = `<div class="form-container"><h2>📝 创建角色卡</h2>${this.formSections({})}
+      <div class="form-actions"><button class="btn-primary" onclick="UI.saveCard()">💾 保存</button><button class="btn-secondary" onclick="UI.renderDefault()">取消</button></div></div>`;
+    this.renderCardList();
+    this.renderWorldBookSection();
+    this.renderCoverGrid();
+  },
+
+  showEditForm(cardId) {
+    const card = Storage.getCard(cardId);
+    if (!card) return;
+    this.tempCover = card.cover || '📖';
+    this.tempWorldBook = JSON.parse(JSON.stringify(card.worldBook || []));
+    const main = document.getElementById('mainContent');
+    main.innerHTML = `<div class="form-container"><h2>✎ 编辑角色卡</h2>${this.formSections(card)}
+      <div class="form-actions"><button class="btn-primary" onclick="UI.saveCard('${cardId}')">💾 更新</button><button class="btn-secondary" onclick="UI.openCard('${cardId}')">取消</button></div></div>`;
+    this.renderWorldBookSection();
+    this.renderCoverGrid();
+  },
+
+  // 表单 HTML 分段
+  formSections(card) {
+    return `
+    <!-- 基本信息 -->
+    <div class="form-section">
+      <div class="form-section-title">📌 基本信息</div>
+      <div class="form-row">
+        <div class="form-group" style="flex:1">
+          <label>🎭 角色卡名称</label>
+          <input type="text" id="cardName" placeholder="比如：末日孤城、修仙传奇…" value="${this.esc(card.name || '')}">
+        </div>
+        <div class="form-group" style="flex:0 0 auto">
+          <label>封面</label>
+          <div class="cover-picker">
+            <div class="cover-preview" id="coverPreview">${card.cover || '📖'}</div>
+          </div>
+        </div>
+      </div>
+      <div class="cover-emoji-grid" id="coverEmojiGrid"></div>
+    </div>
+
+    <!-- 角色设定 -->
+    <div class="form-section">
+      <div class="form-section-title">👤 角色设定</div>
+      <div class="form-group">
+        <label>角色身份 <span class="hint">（你是谁？什么身份、年龄、职业…）</span></label>
+        <textarea id="cardIdentity" rows="2" placeholder="我叫林夜，23岁，一个普通的上班族，性格内向但观察力敏锐…">${this.esc(card.identity || card.roleInfo || '')}</textarea>
+      </div>
+      <div class="form-group">
+        <label>外貌描述 <span class="hint">（长什么样、身材、穿着、气质…）</span></label>
+        <textarea id="cardAppearance" rows="2" placeholder="一米八五，宽肩厚背，寸头，穿着洗得发白的旧T恤…">${this.esc(card.appearance || '')}</textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>性格标签 <span class="hint">（逗号分隔）</span></label>
+          <input type="text" id="cardPersonality" placeholder="沉稳,腹黑,善良,果断" value="${this.esc(card.personality || '')}">
+        </div>
+        <div class="form-group">
+          <label>语言风格 <span class="hint">（说话方式、口头禅）</span></label>
+          <input type="text" id="cardLanguageStyle" placeholder="粗嗓门,话少,偶尔冒出老家方言" value="${this.esc(card.languageStyle || '')}">
+        </div>
+      </div>
+    </div>
+
+    <!-- 故事设定 -->
+    <div class="form-section">
+      <div class="form-section-title">🌍 故事设定</div>
+      <div class="form-group">
+        <label>故事背景 <span class="hint">（时代、地点、世界观、初始场景…）</span></label>
+        <textarea id="cardBackground" rows="4" placeholder="某天醒来，整座城市空无一人。街道上散落着车辆，商店灯还亮着，但所有人都消失了…">${this.esc(card.background || '')}</textarea>
+      </div>
+      <div class="form-group">
+        <label>故事大纲 <span class="hint">（主线方向、章节规划…可选）</span></label>
+        <textarea id="cardOutline" rows="3" placeholder="第一章：发现空城 → 第二章：找到线索 → 第三章：遇到第一个幸存者...">${this.esc(card.outline || '')}</textarea>
+      </div>
+      <div class="form-group">
+        <label>自定义设定 <span class="hint">（风格偏好、字数控制、禁忌内容…）</span></label>
+        <textarea id="cardCustomSettings" rows="2" placeholder="偏悬疑风格，不要超能力，每段不超过400字，氛围要到位">${this.esc(card.customSettings || '')}</textarea>
+      </div>
+    </div>
+
+    <!-- 高级设定 -->
+    <div class="form-section">
+      <div class="form-section-title">⚙️ 高级设定</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>🧠 记忆轮数</label>
+          <select id="cardMemoryRounds">
+            ${[5,10,15,20,25,30].map(n => `<option value="${n}" ${(card.memoryRounds||20)===n?'selected':''}>${n} 轮</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label style="visibility:hidden;">占位</label>
+          <div style="font-size:0.78rem;color:var(--text-secondary);padding-top:8px;">💡 越大记忆越多，Token 消耗越高</div>
+        </div>
+      </div>
+
+      <!-- 世界书 -->
+      <div style="margin-top:4px;">
+        <label style="font-size:0.84rem;font-weight:600;color:var(--text-secondary);display:flex;align-items:center;gap:6px;">
+          🌍 世界书（词条触发系统）
+          <span class="hint" style="font-weight:400;">当对话中出现关键词时自动注入对应设定</span>
+        </label>
+        <div id="worldBookEntries"></div>
+        <button class="btn-add-wb" onclick="UI.addWorldBookEntry()">＋ 添加词条</button>
+      </div>
+    </div>`;
+  },
+
+  // ---- 封面选择器渲染 ----
+  renderCoverGrid() {
+    const grid = document.getElementById('coverEmojiGrid');
+    if (!grid) return;
+    grid.innerHTML = COVER_EMOJIS.map(e => {
+      const sel = e === this.tempCover ? ' selected' : '';
+      return `<button class="${sel}" onclick="UI.selectCover('${e}')">${e}</button>`;
+    }).join('');
+  },
+
+  selectCover(emoji) {
+    this.tempCover = emoji;
+    const preview = document.getElementById('coverPreview');
+    if (preview) preview.textContent = emoji;
+    this.renderCoverGrid();
+  },
+
+  // ---- 世界书渲染 ----
+  renderWorldBookSection() {
+    const container = document.getElementById('worldBookEntries');
+    if (!container) return;
+    if (this.tempWorldBook.length === 0) {
+      container.innerHTML = `<div style="padding:12px;color:var(--text-secondary);font-size:0.82rem;text-align:center;border:1px dashed var(--border);border-radius:var(--radius-sm);margin-bottom:10px;">
+        还没有词条。点击下方按钮添加。<br>例如：关键词"魔法"→ 设定"这个世界的魔法需要消耗生命力"
+      </div>`;
+      return;
+    }
+    container.innerHTML = this.tempWorldBook.map((entry, i) => `
+      <div class="worldbook-entry">
+        <button class="btn-remove-wb" onclick="UI.removeWorldBookEntry(${i})" title="删除">✕</button>
+        <div class="wb-row">
+          <input type="text" placeholder="关键词（逗号分隔）" value="${this.esc(entry.keywords || '')}"
+            onchange="UI.updateWorldBookEntry(${i},'keywords',this.value)" style="flex:1">
+        </div>
+        <div class="wb-row">
+          <textarea placeholder="触发后注入的世界设定…" rows="2"
+            onchange="UI.updateWorldBookEntry(${i},'content',this.value)">${this.esc(entry.content || '')}</textarea>
+        </div>
+      </div>
+    `).join('');
+  },
+
+  addWorldBookEntry() {
+    this.tempWorldBook.push({ keywords: '', content: '' });
+    this.renderWorldBookSection();
+  },
+
+  removeWorldBookEntry(index) {
+    this.tempWorldBook.splice(index, 1);
+    this.renderWorldBookSection();
+  },
+
+  updateWorldBookEntry(index, field, value) {
+    if (this.tempWorldBook[index]) {
+      this.tempWorldBook[index][field] = value;
+    }
+  },
+
+  // ---- 保存 ----
+  saveCard(existingId) {
+    const name = document.getElementById('cardName').value.trim();
+    const identity = document.getElementById('cardIdentity').value.trim();
+    const appearance = document.getElementById('cardAppearance').value.trim();
+    const personality = document.getElementById('cardPersonality').value.trim();
+    const languageStyle = document.getElementById('cardLanguageStyle').value.trim();
+    const background = document.getElementById('cardBackground').value.trim();
+    const outline = document.getElementById('cardOutline').value.trim();
+    const customSettings = document.getElementById('cardCustomSettings').value.trim();
+    const memoryRounds = parseInt(document.getElementById('cardMemoryRounds').value);
+
+    if (!name) { this.toast('⚠️ 请至少填写角色卡名称'); return; }
+    if (!identity) { this.toast('⚠️ 请填写角色身份'); return; }
+
+    const card = {
+      id: existingId || 'card_' + Date.now(),
+      name,
+      cover: this.tempCover,
+      identity,
+      appearance,
+      personality,
+      languageStyle,
+      background,
+      customSettings,
+      outline,
+      memoryRounds,
+      worldBook: JSON.parse(JSON.stringify(this.tempWorldBook)),
+      storyHistory: existingId ? (Storage.getCard(existingId)?.storyHistory || []) : []
+    };
+
+    Storage.upsertCard(card);
+    this.toast(existingId ? '✅ 角色卡已更新' : '✅ 角色卡已创建');
+    this.openCard(card.id);
+  },
+
+  // ========== 游戏界面 ==========
+  openCard(cardId) {
+    const card = Storage.getCard(cardId);
+    if (!card) return;
+    this.currentCardId = cardId;
+    Storage.set('current_card_id', cardId);
+    this.renderCardList();
+    this.renderGame();
+    document.getElementById('sidebar').classList.remove('open');
+  },
+
+  renderGame() {
+    const card = Storage.getCard(this.currentCardId);
+    if (!card) { this.renderDefault(); return; }
+
+    const history = card.storyHistory || [];
+    const main = document.getElementById('mainContent');
+    const cid = this.escAttr(card.id);
+    main.innerHTML = `
+      <div class="game-container">
+        <div class="game-topbar">
+          <div class="story-info">
+            <span class="story-cover">${card.cover || '📖'}</span>
+            <span class="story-name">${this.esc(card.name)}</span>
+            <span class="story-badge">记忆 ${card.memoryRounds || 20} 轮</span>
+            <span class="story-badge">${history.length} 回合</span>
+          </div>
+          <div class="topbar-actions">
+            ${history.length > 0 ? `<button onclick="Game.regretLast('${cid}')" title="撤销最后一步">↩ 后悔</button>` : ''}
+            <button onclick="ImportExport.shareLink('${cid}')">🔗 分享</button>
+            <button onclick="ImportExport.exportCard('${cid}')">📤 导出</button>
+            <button onclick="UI.showEditForm('${cid}')">✎ 编辑</button>
+            <button class="btn-restart" onclick="UI.confirmRestart('${cid}')">🔄 重置</button>
+          </div>
+        </div>
+        <div class="story-scroll" id="storyScroll">
+          ${this.renderStoryHistory(history)}
+          <div id="optionsAnchor"></div>
+        </div>
+      </div>
+      <div class="input-bar">
+        <input type="text" id="customInputInline" placeholder="输入你的行动… 粘贴选项、自由发挥"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){Game.sendCustomInline('${cid}')}">
+        <button onclick="Game.sendCustomInline('${cid}')">发送 ➤</button>
+      </div>`;
+    if (history.length === 0) {
+      this.renderStartButton(card.id);
+    } else {
+      // 有历史记录 → 解析最后一轮 AI 回复，渲染其中的选项
+      const lastRound = history[history.length - 1];
+      const parsed = API.parseResponse(lastRound.fullResponse);
+      this.renderOptions(parsed.options);
+    }
+    this.scrollToBottom();
+  },
+
+  renderStoryHistory(history) {
+    if (!history || history.length === 0) {
+      return `<div id="storyEmptyHint" style="text-align:center;padding:60px 20px;color:var(--text-secondary);"><div style="font-size:3rem;margin-bottom:12px;">📖</div><p>点击下方按钮，AI 为你开启故事…</p></div>`;
+    }
+    const cid = this.escAttr(this.currentCardId);
+    return history.map((round, i) => {
+      const parsed = API.parseResponse(round.fullResponse);
+      const narrative = parsed.narrative || round.fullResponse;
+      return `<div class="story-block">
+        <div class="story-narrative">${this.esc(narrative)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(narrative)}')" title="复制">📋</button></div>
+        <div class="story-chosen">➤ ${this.esc(round.chosen)}
+          <button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(round.chosen)}')" title="复制">📋</button>
+          <button class="del-block-btn" onclick="Game.deleteRound('${cid}',${i})" title="删除此段对话">🗑 删</button>
+        </div>
+      </div>`;
+    }).join('');
+  },
+
+  // 新故事：显示"开始故事"按钮
+  renderStartButton(cardId) {
+    const anchor = document.getElementById('optionsAnchor');
+    if (!anchor) return;
+    anchor.innerHTML = `
+      <div class="options-block">
+        <button class="option-btn" onclick="Game.startStory('${this.escAttr(cardId)}')"><span class="opt-letter">▶</span> 让 AI 根据设定开启故事</button>
+        <p style="color:var(--text-secondary);font-size:0.8rem;margin-top:10px;">也可以在下方输入框直接写下开场白</p>
+      </div>`;
+    this.scrollToBottom();
+  },
+
+  // 在 story-scroll 底部显示/隐藏打字动画
+  renderTypingIndicator(visible) {
+    const anchor = document.getElementById('optionsAnchor');
+    if (!anchor) return;
+    if (visible) {
+      anchor.innerHTML = `<div class="options-block"><div class="typing-indicator" id="typingIndicator" style="display:flex"><span></span><span></span><span></span></div></div>`;
+      this.scrollToBottom();
+    } else {
+      anchor.innerHTML = '<div class="options-block"><div class="typing-indicator" id="typingIndicator" style="display:none"><span></span><span></span><span></span></div></div>';
+    }
+  },
+
+  appendStoryBlock(narrative, chosenText, roundIndex) {
+    const scroll = document.getElementById('storyScroll');
+    const anchor = document.getElementById('optionsAnchor');
+    const cid = this.escAttr(this.currentCardId);
+    const idx = roundIndex !== undefined ? roundIndex : 'last';
+    const delBtn = idx !== undefined ? `<button class="del-block-btn" onclick="Game.deleteRound('${cid}',${idx})" title="删除此段">🗑 删</button>` : '';
+    const block = document.createElement('div');
+    block.className = 'story-block';
+    block.innerHTML = `<div class="story-narrative">${this.esc(narrative)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(narrative)}')" title="复制">📋</button></div><div class="story-chosen">➤ ${this.esc(chosenText)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(chosenText)}')" title="复制">📋</button>${delBtn}</div>`;
+    if (anchor) {
+      scroll.insertBefore(block, anchor);
+    } else {
+      scroll.appendChild(block);
+    }
+    this.scrollToBottom();
+  },
+
+  renderOptions(options) {
+    const anchor = document.getElementById('optionsAnchor');
+    const cardId = this.currentCardId;
+    if (!anchor || !cardId) return;
+
+    const letters = ['A','B','C','D'];
+    const optCount = options.length > 0 ? Math.min(options.length, 4) : 0;
+    const escapedCardId = this.escAttr(cardId);
+
+    if (optCount === 0) {
+      anchor.innerHTML = `<div class="options-block"><p style="color:var(--text-secondary);font-size:0.85rem;padding:8px 0;">（AI 未给出选项，用下方输入框自由行动吧）</p></div>`;
+    } else {
+      anchor.innerHTML = `
+        <div class="options-block">
+          <h3>📌 选择一个行动，或点 📋 复制到下方输入框：</h3>
+          ${options.slice(0, 4).map((opt, i) => `
+            <button class="option-btn" onclick="Game.chooseOption('${escapedCardId}','${this.escAttr(opt.letter)}','${this.escAttr(opt.text)}')">
+              <span class="opt-letter">${letters[i]||opt.letter}</span>${this.esc(opt.text)}
+              <span class="copy-btn" style="float:right" onclick="event.stopPropagation();Util.copy(event,'${this.escAttr(opt.text)}')" title="复制到输入框">📋</span>
+            </button>`).join('')}
+        </div>`;
+    }
+    this.scrollToBottom();
+  },
+
+  scrollToBottom() {
+    setTimeout(() => { const s = document.getElementById('storyScroll'); if (s) s.scrollTop = s.scrollHeight; }, 100);
+  },
+
+  showTyping() {
+    // 清空 anchor 里的旧选项，显示打字动画
+    const anchor = document.getElementById('optionsAnchor');
+    if (anchor) {
+      anchor.innerHTML = `<div class="options-block"><div class="typing-indicator" id="typingIndicator" style="display:flex"><span></span><span></span><span></span></div></div>`;
+    }
+    this.scrollToBottom();
+  },
+
+  // ========== 弹窗 ==========
+  showSettings() {
+    document.getElementById('apiKeyInput').value = Storage.getApiKey();
+    document.getElementById('modelSelect').value = Storage.getModel();
+    document.getElementById('settingsModal').classList.add('show');
+    this.updateApiStatus();
+  },
+  closeSettings() { document.getElementById('settingsModal').classList.remove('show'); },
+  updateApiStatus() {
+    const el = document.getElementById('apiStatus');
+    if (!el) return;
+    if (Storage.getApiKey()) { el.className = 'api-status ok'; el.textContent = '✅ API Key 已配置'; }
+    else { el.className = 'api-status err'; el.textContent = '⚠️ 未配置，请先设置'; }
+  },
+
+  confirmDelete(cardId) {
+    const card = Storage.getCard(cardId);
+    if (!card) return;
+    document.getElementById('confirmMsg').textContent = `确定删除「${card.name}」？故事进度将一起删除。`;
+    document.getElementById('confirmYes').style.background = 'var(--danger)';
+    document.getElementById('confirmYes').textContent = '确认删除';
+    document.getElementById('confirmModal').classList.add('show');
+    document.getElementById('confirmYes').onclick = () => {
+      Storage.deleteCard(cardId);
+      document.getElementById('confirmModal').classList.remove('show');
+      this.render(); this.toast('🗑️ 已删除');
+    };
+    document.getElementById('confirmNo').onclick = () => document.getElementById('confirmModal').classList.remove('show');
+  },
+
+  confirmRestart(cardId) {
+    document.getElementById('confirmMsg').textContent = '重置故事进度？角色卡设定会保留。';
+    document.getElementById('confirmYes').style.background = 'var(--danger)';
+    document.getElementById('confirmYes').textContent = '确认重置';
+    document.getElementById('confirmModal').classList.add('show');
+    document.getElementById('confirmYes').onclick = () => {
+      const card = Storage.getCard(cardId);
+      if (card) { card.storyHistory = []; card.updatedAt = Date.now(); Storage.upsertCard(card); }
+      document.getElementById('confirmModal').classList.remove('show');
+      this.renderGame(); this.toast('🔄 已重置');
+    };
+    document.getElementById('confirmNo').onclick = () => document.getElementById('confirmModal').classList.remove('show');
+  },
+
+  toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.classList.add('show');
+    clearTimeout(el._to); el._to = setTimeout(() => el.classList.remove('show'), 2200);
+  },
+
+  // ========== 辅助 ==========
+  esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; },
+  escAttr(str) { return (str||'').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;'); },
+  fmtDate(ts) {
+    if (!ts) return '未知';
+    const d = new Date(ts), now = new Date();
+    if (d.toDateString() === now.toDateString()) return '今天 ' + d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+    const yesterday = new Date(now); yesterday.setDate(now.getDate()-1);
+    if (d.toDateString() === yesterday.toDateString()) return '昨天';
+    return d.toLocaleDateString('zh-CN',{month:'short',day:'numeric'});
+  }
+};
+
+/* ========================================
+   游戏逻辑
+   ======================================== */
+const Game = {
+  // 在 anchor 前插入或查找 streaming block
+  _getOrCreateStreamBlock() {
+    const scroll = document.getElementById('storyScroll');
+    if (!scroll) return null;
+    let sb = scroll.querySelector('.story-block.streaming');
+    if (!sb) {
+      sb = document.createElement('div'); sb.className = 'story-block streaming';
+      sb.innerHTML = '<div class="story-narrative streaming"></div>';
+      const anchor = document.getElementById('optionsAnchor');
+      const hint = document.getElementById('storyEmptyHint');
+      if (hint) hint.remove();
+      if (anchor) {
+        scroll.insertBefore(sb, anchor);
+      } else {
+        scroll.appendChild(sb);
+      }
+    }
+    return sb;
+  },
+
+  startStory(cardId) {
+    const card = Storage.getCard(cardId);
+    if (!card) return;
+    if (!Storage.getApiKey()) { UI.toast('⚠️ 请先设置 API Key'); UI.showSettings(); return; }
+
+    UI.showTyping(); UI.isStreaming = true;
+    let fullResponse = '';
+    let firstChunk = true;
+
+    API.streamChat(card, '请根据设定开始叙述故事开头，给出引人入胜的开场。',
+      (chunk) => {
+        fullResponse += chunk;
+        const sb = this._getOrCreateStreamBlock();
+        if (sb) {
+          const nel = sb.querySelector('.story-narrative');
+          if (nel) nel.textContent = fullResponse;
+        }
+        // 只在第一个 chunk 时滚一下，之后让用户自由阅读
+        if (firstChunk) { UI.scrollToBottom(); firstChunk = false; }
+      },
+      () => {
+        UI.isStreaming = false;
+        const { narrative, options } = API.parseResponse(fullResponse);
+        // 先保存
+        const c = Storage.getCard(cardId);
+        if (c) { c.storyHistory = [{ chosen: '开始故事', fullResponse, timestamp: Date.now() }]; c.updatedAt = Date.now(); Storage.upsertCard(c); }
+        // 再更新 DOM（带上删除按钮）
+        const finalNarrative = narrative || fullResponse;
+        const escCid = UI.escAttr(cardId);
+        const scroll = document.getElementById('storyScroll');
+        const sb = scroll?.querySelector('.story-block.streaming');
+        if (sb) {
+          sb.classList.remove('streaming');
+          const n = sb.querySelector('.story-narrative');
+          if (n) { n.classList.remove('streaming'); n.innerHTML = UI.esc(finalNarrative) + `<button class="copy-btn" onclick="Util.copy(event,'${UI.escAttr(finalNarrative)}')" title="复制">📋</button>`; }
+          const cd = document.createElement('div');
+          cd.className = 'story-chosen';
+          cd.innerHTML = '➤ 开始故事' + `<button class="copy-btn" onclick="Util.copy(event,'开始故事')" title="复制">📋</button><button class="del-block-btn" onclick="Game.deleteRound('${escCid}',0)" title="删除此段">🗑 删</button>`;
+          sb.appendChild(cd);
+        }
+        UI.renderOptions(options); UI.renderCardList();
+      },
+      (err) => { UI.isStreaming = false; UI.toast('❌ ' + err); }
+    );
+  },
+
+  chooseOption(cardId, letter, text) {
+    if (UI.isStreaming) return;
+    const card = Storage.getCard(cardId); if (!card) return;
+    const chosenText = letter + '. ' + text;
+    this._doStream(cardId, chosenText);
+  },
+
+  sendCustomInline(cardId) {
+    if (UI.isStreaming) return;
+    const input = document.getElementById('customInputInline'); if (!input) return;
+    const text = input.value.trim(); if (!text) return;
+    input.value = '';
+    this._doStream(cardId, text);
+  },
+
+  _doStream(cardId, userText) {
+    const card = Storage.getCard(cardId); if (!card) return;
+    UI.showTyping(); UI.isStreaming = true;
+    let fullResponse = '';
+    let firstChunk = true;
+
+    API.streamChat(card, userText,
+      (chunk) => {
+        fullResponse += chunk;
+        const sb = this._getOrCreateStreamBlock();
+        if (sb) {
+          const nel = sb.querySelector('.story-narrative');
+          if (nel) nel.textContent = fullResponse;
+        }
+        if (firstChunk) { UI.scrollToBottom(); firstChunk = false; }
+      },
+      () => {
+        UI.isStreaming = false;
+        const { narrative, options } = API.parseResponse(fullResponse);
+        // 先保存，获取索引
+        const c = Storage.getCard(cardId);
+        let newIdx = -1;
+        if (c) { c.storyHistory.push({ chosen: userText, fullResponse, timestamp: Date.now() }); c.updatedAt = Date.now(); Storage.upsertCard(c); newIdx = c.storyHistory.length - 1; }
+        // 更新 DOM
+        const finalNarrative = narrative || fullResponse;
+        const escCid = UI.escAttr(cardId);
+        const scroll = document.getElementById('storyScroll');
+        const sb = scroll?.querySelector('.story-block.streaming');
+        if (sb) {
+          sb.classList.remove('streaming');
+          const nel = sb.querySelector('.story-narrative');
+          if (nel) { nel.classList.remove('streaming'); nel.innerHTML = UI.esc(finalNarrative) + `<button class="copy-btn" onclick="Util.copy(event,'${UI.escAttr(finalNarrative)}')" title="复制">📋</button>`; }
+          const cd = document.createElement('div');
+          cd.className = 'story-chosen';
+          cd.innerHTML = '➤ ' + UI.esc(userText) + `<button class="copy-btn" onclick="Util.copy(event,'${UI.escAttr(userText)}')" title="复制">📋</button><button class="del-block-btn" onclick="Game.deleteRound('${escCid}',${newIdx})" title="删除此段">🗑 删</button>`;
+          sb.appendChild(cd);
+        }
+        UI.renderOptions(options); UI.renderCardList();
+      },
+      (err) => { UI.isStreaming = false; UI.toast('❌ ' + err); }
+    );
+  },
+
+  // 撤销最后一步
+  regretLast(cardId) {
+    if (UI.isStreaming) return;
+    const card = Storage.getCard(cardId);
+    if (!card || !card.storyHistory || card.storyHistory.length === 0) return;
+    card.storyHistory.pop();
+    card.updatedAt = Date.now();
+    Storage.upsertCard(card);
+    UI.renderGame();
+    UI.renderCardList();
+    UI.toast('↩ 已撤销最后一步');
+  },
+
+  // 删除指定的一段对话
+  deleteRound(cardId, index) {
+    if (UI.isStreaming) return;
+    const card = Storage.getCard(cardId);
+    if (!card || !card.storyHistory || index < 0 || index >= card.storyHistory.length) return;
+    card.storyHistory.splice(index, 1);
+    card.updatedAt = Date.now();
+    Storage.upsertCard(card);
+    UI.renderGame();
+    UI.renderCardList();
+    UI.toast('🗑️ 已删除该段');
+  }
+};
+
+/* ========================================
+   导入导出
+   ======================================== */
+const ImportExport = {
+  exportCard(cardId) {
+    const card = Storage.getCard(cardId);
+    if (!card) { UI.toast('⚠️ 角色卡不存在'); return; }
+    const data = exportCardForShare(card);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = (card.name || '角色卡') + '.json'; a.click();
+    URL.revokeObjectURL(url);
+    UI.toast('📤 角色卡已导出');
+  },
+
+  importCard() {
+    document.getElementById('importFileInput').click();
+  },
+
+  // 生成分享链接（角色卡 JSON 编码到 URL hash）
+  shareLink(cardId) {
+    const card = Storage.getCard(cardId);
+    if (!card) { UI.toast('⚠️ 角色卡不存在'); return; }
+    const data = exportCardForShare(card);
+    const json = JSON.stringify(data);
+    const encoded = btoa(unescape(encodeURIComponent(json)));
+    const url = location.origin + location.pathname + '#card=' + encoded;
+    navigator.clipboard.writeText(url).then(() => {
+      UI.toast('🔗 分享链接已复制！发给朋友即可');
+    }).catch(() => {
+      // 回退：显示链接让用户手动复制
+      prompt('复制这个链接分享角色卡：', url);
+    });
+  },
+
+  // 从 URL hash 检查并导入角色卡
+  checkUrlImport() {
+    const hash = location.hash;
+    if (!hash || !hash.startsWith('#card=')) return null;
+    try {
+      const encoded = hash.substring(6);
+      const json = decodeURIComponent(escape(atob(encoded)));
+      const data = JSON.parse(json);
+      if (!data.name) return null;
+      // 清除 hash 避免重复导入
+      history.replaceState(null, '', location.pathname);
+      return {
+        id: 'card_' + Date.now(),
+        name: data.name,
+        cover: data.cover || '📖',
+        identity: data.identity || data.roleInfo || '',
+        appearance: data.appearance || '',
+        personality: data.personality || '',
+        languageStyle: data.languageStyle || '',
+        background: data.background || '',
+        customSettings: data.customSettings || '',
+        outline: data.outline || '',
+        memoryRounds: data.memoryRounds || 20,
+        worldBook: data.worldBook || [],
+        storyHistory: []
+      };
+    } catch { return null; }
+  },
+
+  handleImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        // 基本校验
+        if (!data.name) { UI.toast('⚠️ 无效的角色卡文件'); return; }
+        // 合并到现有字段结构
+        const card = {
+          id: 'card_' + Date.now(),
+          name: data.name,
+          cover: data.cover || '📖',
+          identity: data.identity || data.roleInfo || '',
+          appearance: data.appearance || '',
+          personality: data.personality || '',
+          languageStyle: data.languageStyle || '',
+          background: data.background || '',
+          customSettings: data.customSettings || '',
+          outline: data.outline || '',
+          memoryRounds: data.memoryRounds || 20,
+          worldBook: data.worldBook || [],
+          storyHistory: []
+        };
+        Storage.upsertCard(card);
+        UI.render();
+        UI.toast('✅ 角色卡「' + card.name + '」已导入');
+      } catch {
+        UI.toast('⚠️ JSON 格式有误，无法导入');
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  }
+};
+
+/* ========================================
+   工具函数
+   ======================================== */
+const Util = {
+  copy(event, text) {
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = event.target;
+      btn.textContent = '✅'; btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '📋'; btn.classList.remove('copied'); }, 1500);
+    }).catch(() => {
+      // 回退方案
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      const btn = event.target;
+      btn.textContent = '✅'; btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '📋'; btn.classList.remove('copied'); }, 1500);
+    });
+  }
+};
+
+/* ========================================
+   设置保存
+   ======================================== */
+const Settings = {
+  save() {
+    Storage.setApiKey(document.getElementById('apiKeyInput').value.trim());
+    Storage.setModel(document.getElementById('modelSelect').value);
+    UI.closeSettings(); UI.toast('✅ 设置已保存');
+  }
+};
+
+/* ========================================
+   侧边栏切换（移动端）
+   ======================================== */
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+
+/* ========================================
+   初始化
+   ======================================== */
+function init() {
+  UI.render();
+
+  // 检查 URL 里是否有分享的角色卡
+  const importedCard = ImportExport.checkUrlImport();
+  if (importedCard) {
+    Storage.upsertCard(importedCard);
+    UI.toast('✅ 已导入角色卡「' + importedCard.name + '」');
+    setTimeout(() => { UI.render(); UI.openCard(importedCard.id); }, 400);
+  }
+
+  if (!Storage.getApiKey()) setTimeout(() => UI.showSettings(), 600);
+
+  document.addEventListener('click', (e) => {
+    const sb = document.getElementById('sidebar');
+    const tb = document.querySelector('.menu-toggle');
+    if (sb.classList.contains('open') && !sb.contains(e.target) && !tb.contains(e.target)) sb.classList.remove('open');
+  });
+  document.getElementById('settingsModal').addEventListener('click', function(e) { if (e.target === this) UI.closeSettings(); });
+  document.getElementById('confirmModal').addEventListener('click', function(e) { if (e.target === this) this.classList.remove('show'); });
+
+  console.log('📖 AI Story Weaver v2 已就绪');
+  console.log('   - 结构化角色卡（身份/外貌/性格/语言风格）');
+  console.log('   - 世界书词条触发系统');
+  console.log('   - JSON 导入/导出');
+}
+init();
+</script>
+</body>
+</html>
