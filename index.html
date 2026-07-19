@@ -1393,7 +1393,11 @@ const ImportExport = {
     const data = exportCardForShare(card);
     const json = JSON.stringify(data);
     const encoded = btoa(unescape(encodeURIComponent(json)));
-    const url = location.origin + location.pathname + '#card=' + encoded;
+    // 优先用 GitHub Pages 地址，确保跨设备分享可用
+    const base = location.protocol === 'file:' || location.hostname === 'localhost'
+      ? 'https://dliot-hub.github.io/ai-story/'
+      : location.origin + location.pathname;
+    const url = base + '#card=' + encoded;
     navigator.clipboard.writeText(url).then(() => {
       UI.toast('🔗 分享链接已复制！发给朋友即可');
     }).catch(() => {
