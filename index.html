@@ -392,7 +392,7 @@ body {
   <div class="card-list" id="cardList"></div>
   <div class="sidebar-footer">
     <button class="btn-import" onclick="ImportExport.importCard()">📥 导入</button>
-    <span style="font-size:0.68rem;color:var(--text-secondary)">DeepSeek</span>
+    <button class="btn-settings" onclick="UI.showSync()" id="syncBtn" title="云端同步">☁️</button>
     <button class="btn-settings" onclick="UI.showSettings()">⚙️</button>
   </div>
 </aside>
@@ -423,6 +423,26 @@ body {
     <div class="form-actions">
       <button class="btn-primary" onclick="Settings.save()">💾 保存</button>
       <button class="btn-secondary" onclick="UI.closeSettings()">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 同步弹窗 ========== -->
+<div class="modal-overlay" id="syncModal">
+  <div class="modal">
+    <h3>☁️ 云端同步</h3>
+    <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:14px;">
+      设置一个同步码，同一同步码的设备会自动共享角色卡和故事进度。
+    </p>
+    <div class="form-group">
+      <label>同步码（4位以上，像密码一样）</label>
+      <input type="text" id="syncCodeInput" placeholder="比如：story123" maxlength="30">
+    </div>
+    <div id="syncStatus" style="font-size:0.78rem;margin-bottom:10px;"></div>
+    <div class="form-actions">
+      <button class="btn-primary" onclick="SyncUI.save()">🔗 绑定同步</button>
+      <button class="btn-secondary" id="syncDisableBtn" style="display:none" onclick="SyncUI.disable()">解除绑定</button>
+      <button class="btn-secondary" onclick="UI.closeSync()">取消</button>
     </div>
   </div>
 </div>
@@ -468,7 +488,7 @@ const Storage = {
   },
   set(key, value) { localStorage.setItem(key, JSON.stringify(value)); },
   getCards() { return this.get('story_cards_v2', []); },
-  saveCards(cards) { this.set('story_cards_v2', cards); },
+  saveCards(cards) { this.set('story_cards_v2', cards); if (CloudSync.isEnabled()) CloudSync.push(); },
   getCard(id) { return this.getCards().find(c => c.id === id) || null; },
 
   upsertCard(card) {
@@ -493,6 +513,114 @@ const Storage = {
   setApiKey(key) { this.set('api_key', key); },
   getModel() { return this.get('model', 'deepseek-chat'); },
   setModel(model) { this.set('model', model); }
+};
+
+/* ========================================
+   云端同步（Supabase REST API）
+   ======================================== */
+const CloudSync = {
+  BASE_URL: 'https://mjjfdrbqnrkzcpnuhzro.supabase.co',
+  API_KEY: 'sb_publishable_NJIPYgXba9a_8vyJ6endaA_JLDre3mh',
+  _syncCode: null,
+  _enabled: false,
+
+  getSyncCode() {
+    if (this._syncCode) return this._syncCode;
+    this._syncCode = Storage.get('sync_code', '');
+    this._enabled = !!this._syncCode;
+    return this._syncCode;
+  },
+
+  setSyncCode(code) {
+    this._syncCode = code;
+    this._enabled = !!code;
+    Storage.set('sync_code', code);
+  },
+
+  isEnabled() {
+    return this._enabled || !!this.getSyncCode();
+  },
+
+  // 从云端拉取数据
+  async pull() {
+    const code = this.getSyncCode();
+    if (!code) return null;
+    try {
+      const resp = await fetch(
+        `${this.BASE_URL}/rest/v1/sync_data?sync_code=eq.${encodeURIComponent(code)}&select=*`,
+        { headers: { 'apikey': this.API_KEY, 'Authorization': `Bearer ${this.API_KEY}` } }
+      );
+      if (!resp.ok) { console.warn('CloudSync pull failed:', resp.status); return null; }
+      const data = await resp.json();
+      return data && data.length > 0 ? data[0] : null;
+    } catch(e) { console.warn('CloudSync pull error:', e.message); return null; }
+  },
+
+  // 推送到云端
+  async push() {
+    const code = this.getSyncCode();
+    if (!code) return;
+    try {
+      const cards = Storage.getCards();
+      const currentCardId = Storage.get('current_card_id', null);
+      const resp = await fetch(`${this.BASE_URL}/rest/v1/sync_data`, {
+        method: 'POST',
+        headers: {
+          'apikey': this.API_KEY,
+          'Authorization': `Bearer ${this.API_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify({
+          sync_code: code,
+          cards: cards,
+          current_card_id: currentCardId,
+          updated_at: new Date().toISOString()
+        })
+      });
+      if (!resp.ok) console.warn('CloudSync push failed:', resp.status);
+      return resp.ok;
+    } catch(e) { console.warn('CloudSync push error:', e.message); return false; }
+  },
+
+  // 首次同步：拉取云端数据，合并到本地
+  async initialSync() {
+    const code = this.getSyncCode();
+    if (!code) return false;
+    const cloud = await this.pull();
+    if (!cloud || !cloud.cards || cloud.cards.length === 0) {
+      // 云端没数据，把本地的推上去
+      await this.push();
+      return true;
+    }
+    // 云端有数据 → 合并（云端优先）
+    const localCards = Storage.getCards();
+    const cloudCards = cloud.cards || [];
+    const merged = this._mergeCards(localCards, cloudCards);
+    Storage.saveCards(merged);
+    if (cloud.current_card_id) {
+      Storage.set('current_card_id', cloud.current_card_id);
+    }
+    UI.toast('☁️ 已同步云端数据');
+    return true;
+  },
+
+  // 合并逻辑：云端优先，本地新卡保留
+  _mergeCards(local, cloud) {
+    const cloudMap = {};
+    for (const c of cloud) { cloudMap[c.id] = c; }
+    for (const l of local) {
+      if (!cloudMap[l.id]) {
+        // 本地卡云端没有 → 保留
+        cloud.push(l);
+      } else if ((l.updatedAt || 0) > (cloudMap[l.id].updatedAt || 0)) {
+        // 本地更新 → 覆盖云端
+        const idx = cloud.findIndex(c => c.id === l.id);
+        if (idx >= 0) cloud[idx] = l;
+      }
+    }
+    return cloud;
+  }
 };
 
 /* ========================================
@@ -1497,6 +1625,43 @@ const Util = {
 /* ========================================
    设置保存
    ======================================== */
+// 同步 UI
+const SyncUI = {
+  async save() {
+    const code = document.getElementById('syncCodeInput').value.trim();
+    if (code.length < 4) { UI.toast('⚠️ 同步码至少4位'); return; }
+    document.getElementById('syncStatus').innerHTML = '<span style="color:var(--accent)">⏳ 连接云端...</span>';
+    CloudSync.setSyncCode(code);
+    const ok = await CloudSync.initialSync();
+    if (ok) {
+      document.getElementById('syncStatus').innerHTML = '<span style="color:var(--success)">✅ 已绑定！数据已同步</span>';
+      UI.render(); // 刷新界面
+      setTimeout(() => UI.closeSync(), 800);
+    } else {
+      document.getElementById('syncStatus').innerHTML = '<span style="color:var(--danger)">❌ 连接失败，检查网络</span>';
+    }
+  },
+  disable() {
+    CloudSync.setSyncCode('');
+    UI.toast('🔓 已解除同步绑定');
+    UI.closeSync();
+  }
+};
+
+// UI 同步方法
+UI.showSync = function() {
+  const code = CloudSync.getSyncCode();
+  document.getElementById('syncCodeInput').value = code;
+  document.getElementById('syncStatus').innerHTML = code
+    ? '<span style="color:var(--success)">✅ 当前已绑定同步码</span>'
+    : '';
+  document.getElementById('syncDisableBtn').style.display = code ? 'inline-block' : 'none';
+  document.getElementById('syncModal').classList.add('show');
+};
+UI.closeSync = function() {
+  document.getElementById('syncModal').classList.remove('show');
+};
+
 const Settings = {
   save() {
     Storage.setApiKey(document.getElementById('apiKeyInput').value.trim());
@@ -1513,7 +1678,12 @@ function toggleSidebar() { document.getElementById('sidebar').classList.toggle('
 /* ========================================
    初始化
    ======================================== */
-function init() {
+async function init() {
+  // 如果有同步码，先从云端拉数据
+  if (CloudSync.isEnabled()) {
+    await CloudSync.initialSync();
+  }
+
   UI.render();
 
   // 检查 URL 里是否有分享的角色卡
@@ -1526,12 +1696,19 @@ function init() {
 
   if (!Storage.getApiKey()) setTimeout(() => UI.showSettings(), 600);
 
+  // 更新同步按钮样式
+  if (CloudSync.isEnabled()) {
+    const btn = document.getElementById('syncBtn');
+    if (btn) btn.style.color = 'var(--success)';
+  }
+
   document.addEventListener('click', (e) => {
     const sb = document.getElementById('sidebar');
     const tb = document.querySelector('.menu-toggle');
     if (sb.classList.contains('open') && !sb.contains(e.target) && !tb.contains(e.target)) sb.classList.remove('open');
   });
   document.getElementById('settingsModal').addEventListener('click', function(e) { if (e.target === this) UI.closeSettings(); });
+  document.getElementById('syncModal').addEventListener('click', function(e) { if (e.target === this) UI.closeSync(); });
   document.getElementById('confirmModal').addEventListener('click', function(e) { if (e.target === this) this.classList.remove('show'); });
 
   console.log('📖 AI Story Weaver v2 已就绪');
