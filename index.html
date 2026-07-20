@@ -1220,10 +1220,12 @@ const UI = {
         </div>
       </div>
       <div class="input-bar">
+        <button id="qaToggleBtn" onclick="Game.toggleQA('${cid}')" title="切换为提问模式" style="padding:8px 12px;background:transparent;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-secondary);cursor:pointer;font-size:0.8rem;flex-shrink:0;">💬</button>
         <input type="text" id="customInputInline" placeholder="输入你的行动… 粘贴选项、自由发挥"
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){Game.sendCustomInline('${cid}')}">
-        <button onclick="Game.sendCustomInline('${cid}')">发送 ➤</button>
+        <button id="sendBtnMain" onclick="Game.sendCustomInline('${cid}')">发送 ➤</button>
       </div>`;
+    UI.qaMode = false;
     if (history.length === 0) {
       this.renderStartButton(card.id);
     } else {
@@ -1473,12 +1475,128 @@ const Game = {
     this._doStream(cardId, chosenText);
   },
 
+  // QA 模式切换
+  toggleQA(cardId) {
+    UI.qaMode = !UI.qaMode;
+    const btn = document.getElementById('qaToggleBtn');
+    const input = document.getElementById('customInputInline');
+    if (UI.qaMode) {
+      btn.style.background = 'var(--accent)';
+      btn.style.color = '#1a1a2e';
+      btn.style.borderColor = 'var(--accent)';
+      btn.textContent = '💬 提问中';
+      input.placeholder = '向 AI 提问…（关于故事、角色、设定）';
+    } else {
+      btn.style.background = 'transparent';
+      btn.style.color = 'var(--text-secondary)';
+      btn.style.borderColor = 'var(--border)';
+      btn.textContent = '💬';
+      input.placeholder = '输入你的行动… 粘贴选项、自由发挥';
+    }
+  },
+
   sendCustomInline(cardId) {
     if (UI.isStreaming) return;
     const input = document.getElementById('customInputInline'); if (!input) return;
     const text = input.value.trim(); if (!text) return;
     input.value = '';
-    this._doStream(cardId, text);
+    if (UI.qaMode) {
+      this._doQA(cardId, text);
+    } else {
+      this._doStream(cardId, text);
+    }
+  },
+
+  // AI 问答（不存入故事进度，使用精简上下文）
+  _doQA(cardId, question) {
+    const card = Storage.getCard(cardId); if (!card) return;
+    if (!Storage.getApiKey()) { UI.toast('⚠️ 请先设置 API Key'); return; }
+    UI.isStreaming = true;
+    let fullResponse = '';
+    let firstChunk = true;
+
+    // QA 精简上下文：只发设定信息，不发历史
+    const qaMessages = [
+      { role: 'system', content: `你是一个关于当前互动小说的智能助手。根据以下故事设定，用简洁友好的方式回答玩家的问题。
+
+【角色身份】${card.identity || ''}
+【故事背景】${card.background || ''}
+${card.customSettings ? '【自定义设定】' + card.customSettings : ''}
+${card.outline ? '【故事大纲】' + card.outline : ''}
+
+当前故事已进行了 ${(card.storyHistory || []).length} 轮。
+
+回答要简洁生动，像朋友聊天一样自然，不要超过200字。` },
+      { role: 'user', content: question }
+    ];
+
+    // 直接调用底层 API 流式请求（绕过 buildMessages 避免带历史）
+    const apiKey = Storage.getApiKey();
+    const model = Storage.getModel();
+    fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, messages: qaMessages, stream: true, temperature: 0.7 })
+    }).then(async response => {
+      if (!response.ok) {
+        let errMsg = `API 错误 (${response.status})`;
+        try { const eb = await response.json(); errMsg = eb.error?.message || errMsg; } catch {}
+        UI.isStreaming = false; UI.toast('❌ ' + errMsg); return;
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n'); buffer = lines.pop() || '';
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith('data: ')) continue;
+            const ds = trimmed.slice(6);
+            if (ds === '[DONE]') continue;
+            try {
+              const p = JSON.parse(ds);
+              const c = p.choices?.[0]?.delta?.content;
+              if (c) {
+                fullResponse += c;
+                const sb = Game._getOrCreateStreamBlock();
+                if (sb) {
+                  const nel = sb.querySelector('.story-narrative');
+                  if (nel) { nel.textContent = fullResponse; nel.style.borderLeftColor = 'var(--success)'; }
+                }
+                if (firstChunk) { UI.scrollToBottom(); firstChunk = false; }
+              }
+            } catch {}
+          }
+        }
+      } catch(e) { UI.isStreaming = false; UI.toast('❌ ' + e.message); return; }
+
+      // 完成
+      UI.isStreaming = false;
+      const ef = UI.escAttr(fullResponse);
+      const eq = UI.escAttr(question);
+      const scroll = document.getElementById('storyScroll');
+      const sb = scroll?.querySelector('.story-block.streaming');
+      if (sb) {
+        sb.classList.remove('streaming');
+        const nel = sb.querySelector('.story-narrative');
+        if (nel) {
+          nel.classList.remove('streaming');
+          nel.style.borderLeftColor = 'var(--success)';
+          nel.innerHTML = UI.esc(fullResponse) + `<button class="copy-btn" onclick="Util.copy(event,'${ef}')" title="复制">📋</button>`;
+        }
+        const cd = document.createElement('div');
+        cd.className = 'story-chosen';
+        cd.style.marginBottom = '8px';
+        cd.style.color = 'var(--success)';
+        cd.innerHTML = '❓ ' + UI.esc(question) + `<button class="copy-btn" onclick="Util.copy(event,'${eq}')" title="复制">📋</button>`;
+        sb.insertBefore(cd, sb.firstChild);
+      }
+      UI.scrollToBottom();
+    }).catch(e => { UI.isStreaming = false; UI.toast('❌ ' + e.message); });
   },
 
   _doStream(cardId, userText) {
