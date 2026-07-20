@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 问答 - Story Weaver</title>
+<style>
+:root {
+  --bg: #0f0f1a; --surface: #1a1a2e; --accent: #c9a96e;
+  --text: #e4e4ec; --text-secondary: #8888a0; --border: #2a2a45;
+  --radius: 10px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg); color: var(--text); height: 100vh; height: 100dvh;
+  display: flex; flex-direction: column; overflow: hidden; line-height: 1.7;
+}
+
+/* 顶栏 */
+.topbar {
+  padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+}
+.topbar h1 { font-size: 1rem; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+.topbar a { color: var(--text-secondary); text-decoration: none; font-size: 0.8rem; }
+.topbar a:hover { color: var(--accent); }
+
+/* 聊天区 */
+.chat-scroll { flex:1; overflow-y:auto; padding:20px; }
+.chat-scroll::-webkit-scrollbar { width:4px; }
+.chat-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+.msg { margin-bottom:18px; max-width:85%; animation: fadeIn 0.3s; }
+@keyframes fadeIn { from{opacity:0;transform:translateY(6px);} to{opacity:1;transform:translateY(0);} }
+
+.msg-user { margin-left:auto; }
+.msg-user .bubble { background:var(--accent); color:#1a1a2e; border-radius:var(--radius) var(--radius) 4px var(--radius); }
+.msg-ai .bubble { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius) var(--radius) var(--radius) 4px; }
+.bubble { padding:12px 16px; font-size:0.92rem; line-height:1.7; white-space:pre-wrap; word-break:break-word; }
+.msg-label { font-size:0.7rem; color:var(--text-secondary); margin-bottom:4px; }
+.msg-user .msg-label { text-align:right; }
+.bubble-row { display:flex; align-items:flex-end; gap:6px; }
+.msg-user .bubble-row { justify-content:flex-end; }
+.btn-copy {
+  opacity:0; background:none; border:1px solid var(--border); color:var(--text-secondary);
+  padding:2px 7px; border-radius:4px; cursor:pointer; font-size:0.65rem; transition:all 0.2s; flex-shrink:0;
+}
+.bubble-row:hover .btn-copy { opacity:1; }
+.btn-copy:hover { color:var(--accent); border-color:var(--accent); }
+.btn-del {
+  opacity:0; background:none; border:1px solid transparent; color:var(--text-secondary);
+  padding:2px 6px; border-radius:4px; cursor:pointer; font-size:0.65rem; transition:all 0.2s; flex-shrink:0;
+}
+.bubble-row:hover .btn-del { opacity:1; }
+.btn-del:hover { color:var(--danger); border-color:var(--danger); }
+
+/* 等待动画 */
+.typing-dot { display:inline-flex; gap:4px; padding:4px 0; }
+.typing-dot span { width:6px;height:6px;background:var(--accent);border-radius:50%;animation:bounce 1.2s infinite; }
+.typing-dot span:nth-child(2){animation-delay:0.2s;}
+.typing-dot span:nth-child(3){animation-delay:0.4s;}
+@keyframes bounce {0%,60%,100%{transform:translateY(0);}30%{transform:translateY(-6px);}}
+
+/* 输入栏 */
+.input-bar {
+  flex-shrink:0; padding:10px 20px calc(10px + env(safe-area-inset-bottom, 8px));
+  background:#1f1f38; border-top:2px solid var(--accent); display:flex; gap:8px;
+}
+.input-bar input {
+  flex:1; padding:11px 16px; background:var(--bg); border:1px solid var(--border);
+  border-radius:var(--radius); color:var(--text); font-size:0.92rem; outline:none; font-family:inherit;
+}
+.input-bar input:focus { border-color:var(--accent); }
+.input-bar input::placeholder { color:var(--text-secondary); opacity:0.5; }
+.input-bar button {
+  padding:10px 20px; background:var(--accent); color:#1a1a2e; border:none; border-radius:var(--radius);
+  font-weight:600; cursor:pointer; font-size:0.9rem; white-space:nowrap; flex-shrink:0;
+}
+.input-bar button:hover { background:#d4b87a; }
+.input-bar button:disabled { opacity:0.4; cursor:not-allowed; }
+
+/* 空状态 */
+.empty-state { text-align:center; padding:60px 20px; color:var(--text-secondary); }
+.empty-state .icon { font-size:3rem; margin-bottom:12px; }
+.empty-state h2 { font-size:1.2rem; color:var(--text); margin-bottom:6px; }
+.empty-state p { font-size:0.85rem; max-width:360px; margin:0 auto; }
+
+/* 设置 */
+.settings-bar { padding:8px 20px; background:var(--surface); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.settings-bar input { flex:1; padding:6px 10px; background:var(--bg); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:0.78rem; outline:none; max-width:220px; }
+.settings-bar input:focus { border-color:var(--accent); }
+.settings-bar button { padding:5px 12px; background:transparent; border:1px solid var(--border); color:var(--text-secondary); border-radius:4px; cursor:pointer; font-size:0.75rem; }
+.settings-bar button:hover { color:var(--text); border-color:var(--text-secondary); }
+.settings-bar button.active { background:var(--accent); color:#1a1a2e; border-color:var(--accent); }
+
+/* 响应式 */
+@media(max-width:768px) {
+  .chat-scroll { padding:12px; }
+  .input-bar { padding:8px 12px calc(8px + env(safe-area-inset-bottom,8px)); }
+  .msg { max-width:92%; }
+  .settings-bar { flex-wrap:wrap; }
+}
+</style>
+</head>
+<body>
+
+<div class="settings-bar" id="settingsBar">
+  <input type="password" id="apiKeyInput" placeholder="DeepSeek API Key">
+  <button onclick="Chat.saveKey()">保存 Key</button>
+  <button id="clearBtn" onclick="Chat.clearHistory()">🗑 清空记录</button>
+  <a href="index.html" style="font-size:0.75rem;color:var(--text-secondary);margin-left:auto;text-decoration:none;">📖 回故事</a>
+</div>
+
+<div class="topbar">
+  <h1>💬 AI 问答</h1>
+  <a href="index.html">📖 Story Weaver</a>
+</div>
+
+<div class="chat-scroll" id="chatScroll">
+  <div class="empty-state">
+    <div class="icon">🤖</div>
+    <h2>随便问</h2>
+    <p>DeepSeek 回答任何问题。与故事模式共享 API Key。</p>
+  </div>
+</div>
+
+<div class="input-bar">
+  <input type="text" id="msgInput" placeholder="输入问题… Enter 发送（Shift+Enter 换行）"
+    onkeydown="if(event.key==='Enter'&&!event.shiftKey){Chat.send()}">
+  <button id="sendBtn" onclick="Chat.send()">发送 ➤</button>
+</div>
+
+<script>
+const STORAGE_KEY = 'ai_chat_history_v1';
+
+const Chat = {
+  history: [],
+  isStreaming: false,
+
+  loadHistory() {
+    try { this.history = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+    catch { this.history = []; }
+  },
+
+  saveHistory() {
+    // 最多保留 200 条
+    if (this.history.length > 200) this.history = this.history.slice(-200);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.history));
+  },
+
+  saveKey() {
+    const key = document.getElementById('apiKeyInput').value.trim();
+    localStorage.setItem('api_key', key);
+    this.render();
+    this.toast('✅ Key 已保存');
+  },
+
+  clearHistory() {
+    if (this.isStreaming) return;
+    this.history = [];
+    this.saveHistory();
+    this.render();
+    this.toast('🗑️ 已清空');
+  },
+
+  send() {
+    if (this.isStreaming) return;
+    const input = document.getElementById('msgInput');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+
+    const apiKey = localStorage.getItem('api_key');
+    if (!apiKey) {
+      this.toast('⚠️ 请先设置 API Key');
+      document.getElementById('settingsBar').scrollIntoView();
+      return;
+    }
+
+    // 添加用户消息
+    this.history.push({ role: 'user', content: text, time: Date.now() });
+    this.saveHistory();
+    this.render();
+    this.scrollBottom();
+
+    // 启动 AI 流式
+    this.isStreaming = true;
+    document.getElementById('sendBtn').disabled = true;
+
+    let fullResponse = '';
+    // 构建消息（最近 20 轮）
+    const messages = this.history.slice(-20).map(h => ({ role: h.role, content: h.content }));
+
+    fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: localStorage.getItem('model') || 'deepseek-chat', messages, stream: true })
+    }).then(async response => {
+      if (!response.ok) {
+        let err = `API 错误 (${response.status})`;
+        try { const b = await response.json(); err = b.error?.message || err; } catch {}
+        throw new Error(err);
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      // 添加空的 AI 消息占位
+      this.history.push({ role: 'assistant', content: '', time: Date.now() });
+      this.render();
+      this.scrollBottom();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n'); buffer = lines.pop() || '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+          const ds = trimmed.slice(6);
+          if (ds === '[DONE]') continue;
+          try {
+            const p = JSON.parse(ds);
+            const c = p.choices?.[0]?.delta?.content;
+            if (c) {
+              fullResponse += c;
+              this.history[this.history.length - 1].content = fullResponse;
+              this.updateLastBubble(fullResponse);
+              this.scrollBottom();
+            }
+          } catch {}
+        }
+      }
+      this.saveHistory();
+      this.isStreaming = false;
+      document.getElementById('sendBtn').disabled = false;
+    }).catch(e => {
+      this.isStreaming = false;
+      document.getElementById('sendBtn').disabled = false;
+      if (this.history.length > 0 && this.history[this.history.length - 1].content === '') {
+        this.history.pop();
+      }
+      this.toast('❌ ' + e.message);
+    });
+  },
+
+  updateLastBubble(text) {
+    const scroll = document.getElementById('chatScroll');
+    const lastBubble = scroll?.querySelector('.msg-ai:last-child .bubble');
+    if (lastBubble) lastBubble.textContent = text;
+  },
+
+  render() {
+    const container = document.getElementById('chatScroll');
+    const apiKey = localStorage.getItem('api_key');
+    document.getElementById('apiKeyInput').value = apiKey || '';
+
+    if (!apiKey) {
+      container.innerHTML = `<div class="empty-state"><div class="icon">🔑</div><h2>请先设置 API Key</h2><p>在上方输入 DeepSeek API Key，与 Story Weaver 共享同一个 Key。</p></div>`;
+      return;
+    }
+
+    if (this.history.length === 0) {
+      container.innerHTML = `<div class="empty-state"><div class="icon">🤖</div><h2>随便问</h2><p>DeepSeek 回答任何问题。支持代码、翻译、写作、学习辅导。</p></div>`;
+      return;
+    }
+
+    container.innerHTML = this.history.map((msg, i) => {
+      const cls = msg.role === 'user' ? 'msg-user' : 'msg-ai';
+      const label = msg.role === 'user' ? '你' : 'AI';
+      const content = msg.content || (msg.role === 'assistant' && i === this.history.length - 1 ? '<span class="typing-dot"><span></span><span></span><span></span></span>' : '');
+      const copyBtn = msg.content ? `<button class="btn-copy" onclick="Chat.copyText(event,'${this.escAttr(msg.content)}')">📋</button>` : '';
+      const delBtn = `<button class="btn-del" onclick="Chat.deleteMsg(${i})">✕</button>`;
+      return `
+        <div class="msg ${cls}">
+          <div class="msg-label">${label}</div>
+          <div class="bubble-row">
+            ${msg.role === 'ai' ? delBtn + copyBtn : copyBtn + delBtn}
+            <div class="bubble">${content}</div>
+          </div>
+        </div>`;
+    }).join('');
+  },
+
+  scrollBottom() {
+    setTimeout(() => {
+      const s = document.getElementById('chatScroll');
+      if (s) s.scrollTop = s.scrollHeight;
+    }, 50);
+  },
+
+  deleteMsg(index) {
+    this.history.splice(index, 1);
+    this.saveHistory();
+    this.render();
+    this.toast('🗑️ 已删除');
+  },
+
+  copyText(event, text) {
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = event.target;
+      btn.textContent = '✅';
+      setTimeout(() => { btn.textContent = '📋'; }, 1200);
+    });
+  },
+
+  escAttr(str) {
+    return (str||'').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  },
+
+  toast(msg) {
+    let el = document.getElementById('toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'toast';
+      el.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px 24px;border-radius:var(--radius);font-size:0.85rem;z-index:999;opacity:0;transition:opacity 0.3s;pointer-events:none;';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg; el.style.opacity = '1';
+    clearTimeout(el._t); el._t = setTimeout(() => el.style.opacity = '0', 2000);
+  }
+};
+
+// 初始化
+Chat.loadHistory();
+Chat.render();
+</script>
+
+</body>
+</html>
