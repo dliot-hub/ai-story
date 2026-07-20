@@ -638,7 +638,8 @@ function exportCardForShare(card) {
     customSettings: card.customSettings || '',
     outline: card.outline || '',
     memoryRounds: card.memoryRounds || 20,
-    worldBook: card.worldBook || []
+    worldBook: card.worldBook || [],
+    customFields: card.customFields || []
   };
 }
 
@@ -685,6 +686,11 @@ const API = {
     // 故事设定
     parts.push('\n【故事背景】\n' + (card.background || '未指定'));
     if (card.outline) parts.push('\n【故事大纲】\n' + card.outline);
+    if (card.customFields && card.customFields.length > 0) {
+      for (const f of card.customFields) {
+        if (f.name && f.value) parts.push('\n【' + f.name + '】\n' + f.value);
+      }
+    }
     if (card.customSettings) parts.push('\n【自定义设定/特殊规则】\n' + card.customSettings);
 
     // 世界书
@@ -920,11 +926,13 @@ const UI = {
     Storage.set('current_card_id', null);
     this.tempCover = '📖';
     this.tempWorldBook = [];
+    this.tempCustomFields = [];
     const main = document.getElementById('mainContent');
     main.innerHTML = `<div class="form-container"><h2>📝 创建角色卡</h2>${this.formSections({})}
       <div class="form-actions"><button class="btn-primary" onclick="UI.saveCard()">💾 保存</button><button class="btn-secondary" onclick="UI.renderDefault()">取消</button></div></div>`;
     this.renderCardList();
     this.renderWorldBookSection();
+    this.renderCustomFields();
     this.renderCoverGrid();
   },
 
@@ -933,10 +941,12 @@ const UI = {
     if (!card) return;
     this.tempCover = card.cover || '📖';
     this.tempWorldBook = JSON.parse(JSON.stringify(card.worldBook || []));
+    this.tempCustomFields = JSON.parse(JSON.stringify(card.customFields || []));
     const main = document.getElementById('mainContent');
     main.innerHTML = `<div class="form-container"><h2>✎ 编辑角色卡</h2>${this.formSections(card)}
       <div class="form-actions"><button class="btn-primary" onclick="UI.saveCard('${cardId}')">💾 更新</button><button class="btn-secondary" onclick="UI.openCard('${cardId}')">取消</button></div></div>`;
     this.renderWorldBookSection();
+    this.renderCustomFields();
     this.renderCoverGrid();
   },
 
@@ -1026,6 +1036,16 @@ const UI = {
         <div id="worldBookEntries"></div>
         <button class="btn-add-wb" onclick="UI.addWorldBookEntry()">＋ 添加词条</button>
       </div>
+
+      <!-- 自定义字段 -->
+      <div style="margin-top:14px;">
+        <label style="font-size:0.84rem;font-weight:600;color:var(--text-secondary);display:flex;align-items:center;gap:6px;">
+          📝 自定义字段
+          <span class="hint" style="font-weight:400;">自己加设定项，比如「恐怖等级」「魔法体系」「CP名称」</span>
+        </label>
+        <div id="customFieldsEntries"></div>
+        <button class="btn-add-wb" onclick="UI.addCustomField()">＋ 添加字段</button>
+      </div>
     </div>`;
   },
 
@@ -1087,6 +1107,41 @@ const UI = {
     }
   },
 
+  // ---- 自定义字段 ----
+  renderCustomFields() {
+    const container = document.getElementById('customFieldsEntries');
+    if (!container) return;
+    if (!this.tempCustomFields) this.tempCustomFields = [];
+    if (this.tempCustomFields.length === 0) {
+      container.innerHTML = `<div style="padding:10px;color:var(--text-secondary);font-size:0.8rem;text-align:center;border:1px dashed var(--border);border-radius:var(--radius-sm);margin-bottom:8px;">还没有自定义字段，添加你需要的设定项</div>`;
+      return;
+    }
+    container.innerHTML = this.tempCustomFields.map((f, i) => `
+      <div class="worldbook-entry">
+        <button class="btn-remove-wb" onclick="UI.removeCustomField(${i})" title="删除">✕</button>
+        <div class="wb-row">
+          <input type="text" placeholder="字段名（比如：恐怖等级）" value="${this.esc(f.name || '')}" onchange="UI.updateCustomField(${i},'name',this.value)">
+        </div>
+        <div class="wb-row">
+          <textarea placeholder="字段内容…" rows="2" onchange="UI.updateCustomField(${i},'value',this.value)">${this.esc(f.value || '')}</textarea>
+        </div>
+      </div>`).join('');
+  },
+  addCustomField() {
+    if (!this.tempCustomFields) this.tempCustomFields = [];
+    this.tempCustomFields.push({ name: '', value: '' });
+    this.renderCustomFields();
+  },
+  removeCustomField(index) {
+    if (!this.tempCustomFields) return;
+    this.tempCustomFields.splice(index, 1);
+    this.renderCustomFields();
+  },
+  updateCustomField(index, field, value) {
+    if (!this.tempCustomFields || !this.tempCustomFields[index]) return;
+    this.tempCustomFields[index][field] = value;
+  },
+
   // ---- 保存 ----
   saveCard(existingId) {
     const name = document.getElementById('cardName').value.trim();
@@ -1115,6 +1170,7 @@ const UI = {
       outline,
       memoryRounds,
       worldBook: JSON.parse(JSON.stringify(this.tempWorldBook)),
+      customFields: JSON.parse(JSON.stringify(this.tempCustomFields || [])),
       storyHistory: existingId ? (Storage.getCard(existingId)?.storyHistory || []) : []
     };
 
@@ -1558,7 +1614,8 @@ const ImportExport = {
         outline: data.outline || '',
         memoryRounds: data.memoryRounds || 20,
         worldBook: data.worldBook || [],
-        storyHistory: []
+          customFields: data.customFields || [],
+          storyHistory: []
       };
     } catch { return null; }
   },
