@@ -519,7 +519,10 @@ body {
 <div class="chat-panel" id="chatPanel">
   <div class="chat-panel-header">
     <h3>💬 AI 问答</h3>
-    <button onclick="UI.closeChat()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:1.2rem;">✕</button>
+    <div style="display:flex;gap:8px;">
+      <button onclick="PanelChat.clear()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.75rem;" title="清空记录">🗑</button>
+      <button onclick="UI.closeChat()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:1.2rem;">✕</button>
+    </div>
   </div>
   <div class="chat-panel-body" id="chatPanelBody">
     <div style="text-align:center;padding:40px 20px;color:var(--text-secondary);font-size:0.85rem;">
@@ -1867,6 +1870,8 @@ UI.closeMenu = function() {
 
 // 聊天面板开关
 UI.openChat = function() {
+  PanelChat.load();
+  PanelChat.render();
   document.getElementById('chatPanel').classList.add('open');
   document.getElementById('chatPanelOverlay').classList.add('show');
   setTimeout(() => {
@@ -1884,6 +1889,20 @@ const PanelChat = {
   msgs: [],
   busy: false,
 
+  _storageKey() {
+    return 'panel_chat_' + (UI.currentCardId || 'global');
+  },
+
+  load() {
+    try { this.msgs = JSON.parse(localStorage.getItem(this._storageKey()) || '[]'); }
+    catch { this.msgs = []; }
+  },
+
+  save() {
+    if (this.msgs.length > 100) this.msgs = this.msgs.slice(-100);
+    localStorage.setItem(this._storageKey(), JSON.stringify(this.msgs));
+  },
+
   send() {
     if (this.busy) return;
     const input = document.getElementById('chatPanelInput');
@@ -1895,6 +1914,7 @@ const PanelChat = {
     if (!apiKey) { UI.toast('⚠️ 请先设置 API Key'); return; }
 
     this.msgs.push({ role: 'user', content: text });
+    this.save();
     this.render();
 
     this.busy = true;
@@ -1938,6 +1958,7 @@ const PanelChat = {
         }
       }
       this.busy = false;
+      this.save();
     }).catch(e => {
       this.busy = false;
       if (this.msgs.length && !this.msgs[this.msgs.length-1].content) this.msgs.pop();
@@ -1969,6 +1990,7 @@ const PanelChat = {
 
   clear() {
     this.msgs = [];
+    this.save();
     this.render();
   }
 };
