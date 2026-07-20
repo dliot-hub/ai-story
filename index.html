@@ -1244,11 +1244,11 @@ const UI = {
       const parsed = API.parseResponse(round.fullResponse);
       const narrative = parsed.narrative || round.fullResponse;
       return `<div class="story-block">
-        <div class="story-narrative">${this.esc(narrative)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(narrative)}')" title="复制">📋</button></div>
-        <div class="story-chosen">➤ ${this.esc(round.chosen)}
+        <div class="story-chosen" style="margin-bottom:8px;">💬 ${this.esc(round.chosen)}
           <button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(round.chosen)}')" title="复制">📋</button>
           <button class="del-block-btn" onclick="Game.deleteRound('${cid}',${i})" title="删除此段对话">🗑 删</button>
         </div>
+        <div class="story-narrative">${this.esc(narrative)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(narrative)}')" title="复制">📋</button></div>
       </div>`;
     }).join('');
   },
@@ -1285,7 +1285,7 @@ const UI = {
     const delBtn = idx !== undefined ? `<button class="del-block-btn" onclick="Game.deleteRound('${cid}',${idx})" title="删除此段">🗑 删</button>` : '';
     const block = document.createElement('div');
     block.className = 'story-block';
-    block.innerHTML = `<div class="story-narrative">${this.esc(narrative)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(narrative)}')" title="复制">📋</button></div><div class="story-chosen">➤ ${this.esc(chosenText)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(chosenText)}')" title="复制">📋</button>${delBtn}</div>`;
+    block.innerHTML = `<div class="story-chosen" style="margin-bottom:8px;">💬 ${this.esc(chosenText)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(chosenText)}')" title="复制">📋</button>${delBtn}</div><div class="story-narrative">${this.esc(narrative)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(narrative)}')" title="复制">📋</button></div>`;
     if (anchor) {
       scroll.insertBefore(block, anchor);
     } else {
@@ -1456,8 +1456,9 @@ const Game = {
           if (n) { n.classList.remove('streaming'); n.innerHTML = UI.esc(finalNarrative) + `<button class="copy-btn" onclick="Util.copy(event,'${UI.escAttr(finalNarrative)}')" title="复制">📋</button>`; }
           const cd = document.createElement('div');
           cd.className = 'story-chosen';
-          cd.innerHTML = '➤ 开始故事' + `<button class="copy-btn" onclick="Util.copy(event,'开始故事')" title="复制">📋</button><button class="del-block-btn" onclick="Game.deleteRound('${escCid}',0)" title="删除此段">🗑 删</button>`;
-          sb.appendChild(cd);
+          cd.style.marginBottom = '8px';
+          cd.innerHTML = '💬 开始故事' + `<button class="copy-btn" onclick="Util.copy(event,'开始故事')" title="复制">📋</button><button class="del-block-btn" onclick="Game.deleteRound('${escCid}',0)" title="删除此段">🗑 删</button>`;
+          sb.insertBefore(cd, sb.firstChild);
         }
         UI.renderOptions(options); UI.renderCardList();
       },
@@ -1514,8 +1515,9 @@ const Game = {
           if (nel) { nel.classList.remove('streaming'); nel.innerHTML = UI.esc(finalNarrative) + `<button class="copy-btn" onclick="Util.copy(event,'${UI.escAttr(finalNarrative)}')" title="复制">📋</button>`; }
           const cd = document.createElement('div');
           cd.className = 'story-chosen';
-          cd.innerHTML = '➤ ' + UI.esc(userText) + `<button class="copy-btn" onclick="Util.copy(event,'${UI.escAttr(userText)}')" title="复制">📋</button><button class="del-block-btn" onclick="Game.deleteRound('${escCid}',${newIdx})" title="删除此段">🗑 删</button>`;
-          sb.appendChild(cd);
+          cd.style.marginBottom = '8px';
+          cd.innerHTML = '💬 ' + UI.esc(userText) + `<button class="copy-btn" onclick="Util.copy(event,'${UI.escAttr(userText)}')" title="复制">📋</button><button class="del-block-btn" onclick="Game.deleteRound('${escCid}',${newIdx})" title="删除此段">🗑 删</button>`;
+          sb.insertBefore(cd, sb.firstChild);
         }
         UI.renderOptions(options); UI.renderCardList();
       },
