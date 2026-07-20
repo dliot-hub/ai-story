@@ -536,6 +536,18 @@ body {
   </div>
 </div>
 
+<!-- ========== 故事面板弹窗 ========== -->
+<div class="modal-overlay" id="dashboardModal">
+  <div class="modal" style="max-width:500px;">
+    <h3>📊 故事面板</h3>
+    <div id="dashboardContent" style="font-size:0.88rem;line-height:2;"></div>
+    <div class="form-actions" style="margin-top:16px;">
+      <button class="btn-primary" onclick="ImportExport.exportStory(UI.currentCardId)">📄 导出故事</button>
+      <button class="btn-secondary" onclick="UI.closeDashboard()">关闭</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
@@ -1290,6 +1302,7 @@ const UI = {
               <div class="menu-drop" id="topMenu">
                 ${history.length > 0 ? `<button onclick="Game.regretLast('${cid}');UI.closeMenu()">↩ 后悔</button>` : ''}
                 <button onclick="UI.openChat();UI.closeMenu()">💬 AI 问答</button>
+                <button onclick="UI.showDashboard();UI.closeMenu()">📊 故事面板</button>
                 <button onclick="ImportExport.shareLink('${cid}');UI.closeMenu()">🔗 分享</button>
                 <button onclick="ImportExport.exportCard('${cid}');UI.closeMenu()">📤 导出</button>
                 <button onclick="UI.showEditForm('${cid}');UI.closeMenu()">✎ 编辑</button>
@@ -1768,6 +1781,32 @@ const ImportExport = {
     UI.toast('📤 角色卡已导出');
   },
 
+  // 导出完整故事为 Markdown
+  exportStory(cardId) {
+    const card = Storage.getCard(cardId);
+    if (!card || !card.storyHistory || card.storyHistory.length === 0) {
+      UI.toast('⚠️ 还没有故事内容可导出'); return;
+    }
+    let md = `# ${card.name}\n\n`;
+    md += `> ${card.cover || '📖'} 角色：${card.identity || ''}\n`;
+    if (card.background) md += `> 背景：${card.background}\n`;
+    if (card.personality) md += `> 性格：${card.personality}\n`;
+    md += `> 总轮数：${card.storyHistory.length} | 导出时间：${new Date().toLocaleString('zh-CN')}\n\n---\n\n`;
+
+    for (const round of card.storyHistory) {
+      const parsed = API.parseResponse(round.fullResponse);
+      md += `### 💬 ${round.chosen}\n\n`;
+      md += `${parsed.narrative || round.fullResponse}\n\n---\n\n`;
+    }
+
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = (card.name || '故事') + '.md'; a.click();
+    URL.revokeObjectURL(url);
+    UI.toast('📄 故事已导出为 Markdown');
+  },
+
   importCard() {
     document.getElementById('importFileInput').click();
   },
@@ -1858,6 +1897,67 @@ const ImportExport = {
     event.target.value = '';
   }
 };
+
+// 故事面板
+UI.showDashboard = function() {
+  const card = Storage.getCard(UI.currentCardId);
+  if (!card) return;
+  const history = card.storyHistory || [];
+  const rounds = history.length;
+
+  // 估算字数
+  let totalChars = 0;
+  for (const r of history) {
+    totalChars += (r.chosen || '').length;
+    const parsed = API.parseResponse(r.fullResponse);
+    totalChars += (parsed.narrative || r.fullResponse || '').length;
+  }
+
+  // 估算 Token（中文约 1.5 字/token，英文约 4 字/token）
+  const estTokens = Math.round(totalChars * 0.7);
+  const inputTokens = Math.round(estTokens * 0.6);
+  const outputTokens = Math.round(estTokens * 0.4);
+  // DeepSeek 价格：输入 ¥1/百万token，输出 ¥2/百万token
+  const cost = (inputTokens / 1000000 * 1 + outputTokens / 1000000 * 2).toFixed(4);
+
+  // 最新故事梗概（取前 200 字）
+  let summary = '暂无内容';
+  if (rounds > 0) {
+    const last = history[rounds - 1];
+    const parsed = API.parseResponse(last.fullResponse);
+    const text = parsed.narrative || last.fullResponse || '';
+    summary = text.length > 200 ? text.slice(0, 200) + '…' : text;
+  }
+
+  document.getElementById('dashboardContent').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+      <div style="background:var(--option-bg);padding:10px;border-radius:6px;text-align:center;">
+        <div style="font-size:1.5rem;font-weight:700;color:var(--accent);">${rounds}</div>
+        <div style="font-size:0.7rem;color:var(--text-secondary);">总轮数</div>
+      </div>
+      <div style="background:var(--option-bg);padding:10px;border-radius:6px;text-align:center;">
+        <div style="font-size:1.5rem;font-weight:700;color:var(--accent);">${totalChars.toLocaleString()}</div>
+        <div style="font-size:0.7rem;color:var(--text-secondary);">总字数</div>
+      </div>
+      <div style="background:var(--option-bg);padding:10px;border-radius:6px;text-align:center;">
+        <div style="font-size:1.5rem;font-weight:700;color:var(--accent);">${estTokens.toLocaleString()}</div>
+        <div style="font-size:0.7rem;color:var(--text-secondary);">预估 Token</div>
+      </div>
+      <div style="background:var(--option-bg);padding:10px;border-radius:6px;text-align:center;">
+        <div style="font-size:1.5rem;font-weight:700;color:var(--success);">¥${cost}</div>
+        <div style="font-size:0.7rem;color:var(--text-secondary);">预估花费</div>
+      </div>
+    </div>
+    <div style="background:var(--option-bg);padding:10px;border-radius:6px;margin-bottom:8px;">
+      <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:4px;">📖 最新剧情梗概</div>
+      <div style="font-size:0.85rem;line-height:1.7;color:var(--text);">${UI.esc(summary)}</div>
+    </div>`;
+  document.getElementById('dashboardModal').classList.add('show');
+};
+UI.closeDashboard = function() {
+  document.getElementById('dashboardModal').classList.remove('show');
+};
+document.getElementById('dashboardModal').addEventListener('click', function(e) { if (e.target === this) UI.closeDashboard(); });
 
 // 菜单开关
 UI.toggleMenu = function(e) {
