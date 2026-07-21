@@ -2151,6 +2151,7 @@ const Illustration = {
   _settings: {
     style: 'default',
     ratio: '16:9',
+    model: 'flux',
   },
 
   STYLES: {
@@ -2162,6 +2163,14 @@ const Illustration = {
     'ink': { name: '📜 古风水墨', prompt: 'chinese ink wash painting, traditional, misty mountains' },
     'gothic': { name: '🌑 暗黑哥特', prompt: 'dark gothic, atmospheric, moody, dramatic shadows' },
     'pixel': { name: '🎮 像素风', prompt: 'pixel art, 16-bit, retro game style' }
+  },
+
+  MODELS: {
+    'flux': { name: '⚡ Flux（默认）', param: 'flux' },
+    'turbo': { name: '🚀 Turbo（极速）', param: 'turbo' },
+    'flux-realism': { name: '📷 Realism（写实）', param: 'flux-realism' },
+    'flux-anime': { name: '🌸 Anime（动漫）', param: 'flux-anime' },
+    'flux-3d': { name: '🎮 3D（立体）', param: 'flux-3d' },
   },
 
   RATIOS: {
@@ -2187,6 +2196,10 @@ const Illustration = {
     if (this.RATIOS[ratio]) { this._settings.ratio = ratio; this._saveSettings(); this._renderSettingsPop(); }
   },
 
+  setModel(model) {
+    if (this.MODELS[model]) { this._settings.model = model; this._saveSettings(); this._renderSettingsPop(); }
+  },
+
   // 渲染设置弹窗
   showSettings(e, blockEl) {
     e.stopPropagation();
@@ -2209,6 +2222,12 @@ const Illustration = {
         <span class="label">画风</span>
         ${Object.entries(this.STYLES).map(([k,v]) =>
           `<button class="illu-opt${s.style===k?' sel':''}" onclick="Illustration.setStyle('${k}')">${v.name}</button>`
+        ).join('')}
+      </div>
+      <div class="illu-opt-row">
+        <span class="label">模型</span>
+        ${Object.entries(this.MODELS).map(([k,v]) =>
+          `<button class="illu-opt${s.model===k?' sel':''}" onclick="Illustration.setModel('${k}')">${v.name}</button>`
         ).join('')}
       </div>
       <div class="illu-opt-row">
@@ -2243,7 +2262,7 @@ const Illustration = {
       hash |= 0;
     }
     // 缓存 key 包含风格和比例，切换设置会生成新图
-    return 'illu_' + Math.abs(hash) + '_' + this._settings.style + '_' + this._settings.ratio;
+    return 'illu_' + Math.abs(hash) + '_' + this._settings.style + '_' + this._settings.ratio + '_' + this._settings.model;
   },
 
   async generate(narrativeText, containerEl) {
@@ -2287,7 +2306,8 @@ const Illustration = {
     prompt = style.prompt + ', ' + prompt;
     const encoded = encodeURIComponent(prompt);
     const seed = Math.floor(Math.random() * 100000);
-    const url = `https://image.pollinations.ai/prompt/${encoded}?width=${ratio.w}&height=${ratio.h}&nologo=true&seed=${seed}`;
+    const model = this.MODELS[this._settings.model] || this.MODELS['flux'];
+    const url = `https://image.pollinations.ai/prompt/${encoded}?width=${ratio.w}&height=${ratio.h}&nologo=true&seed=${seed}&model=${model.param}`;
 
     const resp = await fetch(url);
     if (!resp.ok) throw new Error('生成失败');
