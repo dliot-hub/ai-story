@@ -294,6 +294,21 @@ body {
 }
 .del-block-btn:hover { color: var(--danger); border-color: var(--danger); }
 
+/* AI 配图 */
+.illu-btn {
+  display:inline-flex; align-items:center; gap:3px;
+  background:none; border:1px solid var(--border); color:var(--text-secondary);
+  padding:3px 10px; border-radius:4px; cursor:pointer; font-size:0.72rem;
+  margin-left:4px; vertical-align:middle; transition:all 0.15s;
+}
+.illu-btn:hover { color:#e8a0bf; border-color:#e8a0bf; }
+.illu-img-wrap { margin-top:10px; text-align:center; }
+.illu-img-wrap img { max-width:100%; max-height:360px; border-radius:8px; border:1px solid var(--border); }
+.illu-img-wrap .illu-loading { color:var(--text-secondary); font-size:0.8rem; padding:20px; }
+.illu-img-wrap .illu-loading span { animation:bounce 1.2s infinite; display:inline-block; }
+.illu-img-wrap .illu-loading span:nth-child(2){animation-delay:0.15s}
+.illu-img-wrap .illu-loading span:nth-child(3){animation-delay:0.3s}
+
 .story-narrative {
   font-size: 1rem; line-height: 2; color: var(--text);
   padding: 16px 20px; background: var(--surface); border-radius: var(--radius);
@@ -1340,12 +1355,12 @@ const UI = {
     return history.map((round, i) => {
       const parsed = API.parseResponse(round.fullResponse);
       const narrative = parsed.narrative || round.fullResponse;
-      return `<div class="story-block">
+      return `<div class="story-block" data-narrative="${this.escAttr(narrative)}">
         <div class="story-chosen" style="margin-bottom:8px;">💬 ${this.esc(round.chosen)}
           <button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(round.chosen)}')" title="复制">📋</button>
           <button class="del-block-btn" onclick="Game.deleteRound('${cid}',${i})" title="删除此段对话">🗑 删</button>
         </div>
-        <div class="story-narrative">${this.esc(narrative)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(narrative)}')" title="复制">📋</button></div>
+        <div class="story-narrative">${this.esc(narrative)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(narrative)}')" title="复制">📋</button><button class="illu-btn" onclick="Illustration.trigger(this.closest('.story-block'))" title="AI 配图">🎨</button></div>
       </div>`;
     }).join('');
   },
@@ -1382,7 +1397,8 @@ const UI = {
     const delBtn = idx !== undefined ? `<button class="del-block-btn" onclick="Game.deleteRound('${cid}',${idx})" title="删除此段">🗑 删</button>` : '';
     const block = document.createElement('div');
     block.className = 'story-block';
-    block.innerHTML = `<div class="story-chosen" style="margin-bottom:8px;">💬 ${this.esc(chosenText)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(chosenText)}')" title="复制">📋</button>${delBtn}</div><div class="story-narrative">${this.esc(narrative)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(narrative)}')" title="复制">📋</button></div>`;
+    block.setAttribute('data-narrative', this.escAttr(narrative));
+    block.innerHTML = `<div class="story-chosen" style="margin-bottom:8px;">💬 ${this.esc(chosenText)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(chosenText)}')" title="复制">📋</button>${delBtn}</div><div class="story-narrative">${this.esc(narrative)}<button class="copy-btn" onclick="Util.copy(event,'${this.escAttr(narrative)}')" title="复制">📋</button><button class="illu-btn" onclick="Illustration.trigger(this.closest('.story-block'))" title="AI 配图">🎨</button></div>`;
     if (anchor) {
       scroll.insertBefore(block, anchor);
     } else {
@@ -1550,7 +1566,7 @@ const Game = {
         if (sb) {
           sb.classList.remove('streaming');
           const n = sb.querySelector('.story-narrative');
-          if (n) { n.classList.remove('streaming'); n.innerHTML = UI.esc(finalNarrative) + `<button class="copy-btn" onclick="Util.copy(event,'${UI.escAttr(finalNarrative)}')" title="复制">📋</button>`; }
+          if (n) { n.classList.remove('streaming'); n.innerHTML = UI.esc(finalNarrative) + `<button class="copy-btn" onclick="Util.copy(event,'${UI.escAttr(finalNarrative)}')" title="复制">📋</button><button class="illu-btn" onclick="Illustration.trigger(this.closest('.story-block'))" title="AI 配图">🎨</button>`; sb.setAttribute('data-narrative', UI.escAttr(finalNarrative)); }
           const cd = document.createElement('div');
           cd.className = 'story-chosen';
           cd.style.marginBottom = '8px';
@@ -1725,7 +1741,7 @@ ${card.outline ? '【故事大纲】' + card.outline : ''}
         if (sb) {
           sb.classList.remove('streaming');
           const nel = sb.querySelector('.story-narrative');
-          if (nel) { nel.classList.remove('streaming'); nel.innerHTML = UI.esc(finalNarrative) + `<button class="copy-btn" onclick="Util.copy(event,'${UI.escAttr(finalNarrative)}')" title="复制">📋</button>`; }
+          if (nel) { nel.classList.remove('streaming'); nel.innerHTML = UI.esc(finalNarrative) + `<button class="copy-btn" onclick="Util.copy(event,'${UI.escAttr(finalNarrative)}')" title="复制">📋</button><button class="illu-btn" onclick="Illustration.trigger(this.closest('.story-block'))" title="AI 配图">🎨</button>`; sb.setAttribute('data-narrative', UI.escAttr(finalNarrative)); }
           const cd = document.createElement('div');
           cd.className = 'story-chosen';
           cd.style.marginBottom = '8px';
@@ -2103,6 +2119,118 @@ document.addEventListener('click', (e) => {
     UI.closeMenu();
   }
 });
+
+/* ========================================
+   AI 配图（Pollinations.ai 免费 API）
+   ======================================== */
+const Illustration = {
+  _cache: {},
+  _pending: {},
+
+  _loadCache() {
+    try { this._cache = JSON.parse(localStorage.getItem('illu_cache') || '{}'); }
+    catch { this._cache = {}; }
+  },
+
+  _saveCache() {
+    const keys = Object.keys(this._cache);
+    if (keys.length > 50) {
+      const oldest = keys.slice(0, keys.length - 50);
+      for (const k of oldest) delete this._cache[k];
+    }
+    localStorage.setItem('illu_cache', JSON.stringify(this._cache));
+  },
+
+  // 用文本 hash 做缓存 key
+  _key(text) {
+    let hash = 0;
+    for (let i = 0; i < Math.min(text.length, 200); i++) {
+      hash = ((hash << 5) - hash) + text.charCodeAt(i);
+      hash |= 0;
+    }
+    return 'illu_' + Math.abs(hash);
+  },
+
+  // 获取或生成配图
+  async generate(narrativeText, containerEl) {
+    const key = this._key(narrativeText);
+    this._loadCache();
+
+    // 已有缓存 → 直接显示
+    if (this._cache[key]) {
+      this._showImage(containerEl, this._cache[key]);
+      return;
+    }
+
+    // 正在生成中 → 等结果
+    if (this._pending[key]) {
+      const url = await this._pending[key];
+      this._showImage(containerEl, url);
+      return;
+    }
+
+    // 显示加载状态
+    containerEl.innerHTML = '<div class="illu-loading">🎨 AI 作画中<span>.</span><span>.</span><span>.</span></div>';
+
+    // 发起请求
+    const promise = this._fetchImage(narrativeText);
+    this._pending[key] = promise;
+
+    try {
+      const url = await promise;
+      this._cache[key] = url;
+      this._saveCache();
+      delete this._pending[key];
+      this._showImage(containerEl, url);
+    } catch(e) {
+      delete this._pending[key];
+      containerEl.innerHTML = `<div style="color:var(--danger);font-size:0.78rem;">❌ 配图失败：${e.message}</div>`;
+    }
+  },
+
+  async _fetchImage(narrativeText) {
+    // 取前 150 字作为 prompt（太长生成效果差）
+    let prompt = narrativeText.replace(/\n/g, ' ').trim().slice(0, 150);
+    // 加上风格词让画面更好看
+    prompt = 'digital art, cinematic lighting, highly detailed, ' + prompt;
+    const encoded = encodeURIComponent(prompt);
+    const seed = Math.floor(Math.random() * 100000);
+    const url = `https://image.pollinations.ai/prompt/${encoded}?width=768&height=512&nologo=true&seed=${seed}`;
+
+    // 用 fetch 触发生成并等待
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('生成失败');
+    // Pollinations 返回的是图片 blob
+    const blob = await resp.blob();
+    return URL.createObjectURL(blob);
+  },
+
+  _showImage(containerEl, url) {
+    containerEl.innerHTML = `<img src="${url}" alt="AI 配图" loading="lazy" onerror="this.parentElement.innerHTML='<div style=color:var(--danger);font-size:0.78rem;>❌ 图片加载失败</div>'">`;
+  },
+
+  // 触发配图（由按钮 onclick 调用）
+  trigger(blockEl) {
+    const narrativeText = blockEl.getAttribute('data-narrative') || '';
+    if (!narrativeText) return;
+    let wrap = blockEl.querySelector('.illu-img-wrap');
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.className = 'illu-img-wrap';
+      blockEl.appendChild(wrap);
+    }
+    // 如果已经有图片，toggle 显示/隐藏
+    if (wrap.querySelector('img') && wrap.style.display !== 'none') {
+      wrap.style.display = 'none';
+      return;
+    }
+    wrap.style.display = '';
+    if (!wrap.querySelector('img') && !wrap.querySelector('.illu-loading')) {
+      this.generate(narrativeText, wrap);
+    }
+  }
+};
+Illustration._loadCache();
 
 /* ========================================
    工具函数
