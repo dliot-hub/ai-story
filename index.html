@@ -2171,6 +2171,7 @@ const Illustration = {
     'flux-realism': { name: '📷 Realism（写实）', param: 'flux-realism' },
     'flux-anime': { name: '🌸 Anime（动漫）', param: 'flux-anime' },
     'flux-3d': { name: '🎮 3D（立体）', param: 'flux-3d' },
+    'local': { name: '🖥️ 本地 SD', param: 'local' },
   },
 
   RATIOS: {
@@ -2302,13 +2303,45 @@ const Illustration = {
     this._loadSettings();
     const style = this.STYLES[this._settings.style] || this.STYLES['default'];
     const ratio = this.RATIOS[this._settings.ratio] || this.RATIOS['16:9'];
-    let prompt = narrativeText.replace(/\n/g, ' ').trim().slice(0, 150);
+    let prompt = narrativeText.replace(/\n/g, ' ').trim().slice(0, 200);
     prompt = style.prompt + ', ' + prompt;
-    const encoded = encodeURIComponent(prompt);
     const seed = Math.floor(Math.random() * 100000);
+
+    // 本地 SD 模式
+    if (this._settings.model === 'local') {
+      try {
+        const resp = await fetch('http://127.0.0.1:7860/sdapi/v1/txt2img', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: prompt,
+            negative_prompt: 'low quality, blurry, bad anatomy, extra fingers, watermark, text, signature',
+            steps: 20,
+            cfg_scale: 7,
+            width: ratio.w,
+            height: ratio.h,
+            seed: seed,
+            sampler_name: 'DPM++ 2M Karras'
+          })
+        });
+        if (!resp.ok) throw new Error('SD 未启动或启动失败');
+        const data = await resp.json();
+        if (!data.images || !data.images[0]) throw new Error('SD 返回空');
+        // base64 → blob → URL
+        const byteStr = atob(data.images[0]);
+        const bytes = new Uint8Array(byteStr.length);
+        for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i);
+        const blob = new Blob([bytes], { type: 'image/png' });
+        return URL.createObjectURL(blob);
+      } catch(e) {
+        throw new Error('本地 SD 连接失败：请确认 SD WebUI 已启动（http://127.0.0.1:7860）');
+      }
+    }
+
+    // Pollinations 云端模式
+    const encoded = encodeURIComponent(prompt);
     const model = this.MODELS[this._settings.model] || this.MODELS['flux'];
     const url = `https://image.pollinations.ai/prompt/${encoded}?width=${ratio.w}&height=${ratio.h}&nologo=true&seed=${seed}&model=${model.param}`;
-
     const resp = await fetch(url);
     if (!resp.ok) throw new Error('生成失败');
     const blob = await resp.blob();
