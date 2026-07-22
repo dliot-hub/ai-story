@@ -2307,34 +2307,34 @@ const Illustration = {
     prompt = style.prompt + ', ' + prompt;
     const seed = Math.floor(Math.random() * 100000);
 
-    // 本地 SD 模式
+    // 本地 SD 模式 → 先试本地，失败自动用云端
     if (this._settings.model === 'local') {
       try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
         const resp = await fetch('http://127.0.0.1:7860/sdapi/v1/txt2img', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: prompt,
             negative_prompt: 'low quality, blurry, bad anatomy, extra fingers, watermark, text, signature',
-            steps: 20,
-            cfg_scale: 7,
-            width: ratio.w,
-            height: ratio.h,
-            seed: seed,
+            steps: 20, cfg_scale: 7, width: ratio.w, height: ratio.h, seed: seed,
             sampler_name: 'DPM++ 2M Karras'
-          })
+          }),
+          signal: controller.signal
         });
-        if (!resp.ok) throw new Error('SD 未启动或启动失败');
+        clearTimeout(timeout);
+        if (!resp.ok) throw new Error('fail');
         const data = await resp.json();
-        if (!data.images || !data.images[0]) throw new Error('SD 返回空');
-        // base64 → blob → URL
+        if (!data.images || !data.images[0]) throw new Error('fail');
         const byteStr = atob(data.images[0]);
         const bytes = new Uint8Array(byteStr.length);
         for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i);
         const blob = new Blob([bytes], { type: 'image/png' });
         return URL.createObjectURL(blob);
       } catch(e) {
-        throw new Error('本地 SD 连接失败：请确认 SD WebUI 已启动（http://127.0.0.1:7860）');
+        // 本地失败了 → 自动降级到 Pollinations Flux
+        console.warn('本地SD不可用，自动切换到云端Pollinations');
       }
     }
 
