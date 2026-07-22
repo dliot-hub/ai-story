@@ -2057,10 +2057,18 @@ const PanelChat = {
     let fullResponse = '';
     const model = Storage.getModel();
 
+    // 构建系统提示：关联当前角色卡，但也能回答任何问题
+    const card = Storage.getCard(UI.currentCardId);
+    let sysMsg = '你是 DeepSeek 助手，用简洁友好的方式回答用户问题。';
+    if (card) {
+      sysMsg += `\n\n用户正在玩一个互动小说，以下是当前故事的设定，用户可能会问到相关内容：\n【角色】${card.identity || ''}\n【背景】${card.background || ''}\n${card.personality ? '【性格】'+card.personality : ''}`;
+    }
+    const msgs = [{ role: 'system', content: sysMsg }, ...this.msgs.slice(-20)];
+
     fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages: this.msgs.slice(-20), stream: true })
+      body: JSON.stringify({ model, messages: msgs, stream: true })
     }).then(async resp => {
       if (!resp.ok) {
         let err = `错误(${resp.status})`;
