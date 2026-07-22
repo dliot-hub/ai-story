@@ -2057,11 +2057,26 @@ const PanelChat = {
     let fullResponse = '';
     const model = Storage.getModel();
 
-    // 构建系统提示：关联当前角色卡，但也能回答任何问题
+    // 复用角色卡完整系统提示（去掉叙述规则），保持一致上下文
     const card = Storage.getCard(UI.currentCardId);
     let sysMsg = '你是 DeepSeek 助手，用简洁友好的方式回答用户问题。';
     if (card) {
-      sysMsg += `\n\n用户正在玩一个互动小说，以下是当前故事的设定，用户可能会问到相关内容：\n【角色】${card.identity || ''}\n【背景】${card.background || ''}\n${card.personality ? '【性格】'+card.personality : ''}`;
+      const parts = [];
+      parts.push('你了解以下互动小说的设定：');
+      parts.push('【角色身份】' + (card.identity || card.roleInfo || '未指定'));
+      if (card.appearance) parts.push('【外貌】' + card.appearance);
+      if (card.personality) parts.push('【性格】' + card.personality);
+      if (card.languageStyle) parts.push('【语言风格】' + card.languageStyle);
+      parts.push('【故事背景】' + (card.background || '未指定'));
+      if (card.outline) parts.push('【大纲】' + card.outline);
+      if (card.customSettings) parts.push('【设定】' + card.customSettings);
+      if (card.customFields && card.customFields.length > 0) {
+        for (const f of card.customFields) {
+          if (f.name && f.value) parts.push('【' + f.name + '】' + f.value);
+        }
+      }
+      sysMsg += '\n\n' + parts.join('\n');
+      sysMsg += '\n\n用户可能询问故事相关内容，请参考以上设定回答。对于与故事无关的通用问题，正常回答即可。回答简洁，不超过200字。';
     }
     const msgs = [{ role: 'system', content: sysMsg }, ...this.msgs.slice(-20)];
 
