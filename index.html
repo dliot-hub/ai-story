@@ -487,6 +487,7 @@ body {
   <div class="card-list" id="cardList"></div>
   <div class="sidebar-footer">
     <button class="btn-import" onclick="ImportExport.importCard()">📥 导入</button>
+    <button class="btn-settings" onclick="Marketplace.browse()" title="角色卡广场">🏪</button>
     <button class="btn-settings" id="syncBtn" onclick="UI.showSync()" title="云端同步">☁️</button>
     <a href="ai-chat.html" class="btn-settings" style="text-decoration:none;" title="AI 问答">💬</a>
     <button class="btn-settings" onclick="UI.showSettings()">⚙️</button>
@@ -1385,8 +1386,10 @@ const UI = {
                 ${history.length > 0 ? `<button onclick="Game.regretLast('${cid}');UI.closeMenu()">↩ 后悔</button>` : ''}
                 <button onclick="UI.openChat();UI.closeMenu()">💬 AI 问答</button>
                 <button onclick="UI.showDashboard();UI.closeMenu()">📊 故事面板</button>
+                <button onclick="Marketplace.publish('${cid}');UI.closeMenu()">📤 发布到广场</button>
+                <button onclick="Marketplace.unpublish('${cid}');UI.closeMenu()">🗑 下架</button>
                 <button onclick="ImportExport.shareLink('${cid}');UI.closeMenu()">🔗 分享</button>
-                <button onclick="ImportExport.exportCard('${cid}');UI.closeMenu()">📤 导出</button>
+                <button onclick="ImportExport.exportCard('${cid}');UI.closeMenu()">📤 导出JSON</button>
                 <button onclick="UI.showEditForm('${cid}');UI.closeMenu()">✎ 编辑</button>
                 <button class="danger" onclick="UI.confirmRestart('${cid}');UI.closeMenu()">🔄 重置</button>
               </div>
@@ -1845,6 +1848,121 @@ ${card.outline ? '【故事大纲】' + card.outline : ''}
     UI.renderGame();
     UI.renderCardList();
     UI.toast('🗑️ 已删除该段');
+  }
+};
+
+/* ========================================
+   角色卡广场（Supabase 公共卡片库）
+   ======================================== */
+const Marketplace = {
+  BASE: 'https://mjjfdrbqnrkzcpnuhzro.supabase.co',
+  KEY: 'sb_publishable_NJIPYgXba9a_8vyJ6endaA_JLDre3mh',
+
+  // 发布到广场
+  async publish(cardId) {
+    const card = Storage.getCard(cardId);
+    if (!card) { UI.toast('⚠️ 角色卡不存在'); return; }
+    const data = exportCardForShare(card);
+    try {
+      const resp = await fetch(`${this.BASE}/rest/v1/public_cards`, {
+        method: 'POST',
+        headers: { 'apikey': this.KEY, 'Authorization': `Bearer ${this.KEY}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
+        body: JSON.stringify({ id: card.id, card_data: data, created_at: new Date().toISOString() })
+      });
+      if (!resp.ok) throw new Error('发布失败');
+      UI.toast('📤 已发布到广场！');
+    } catch(e) { UI.toast('❌ ' + e.message); }
+  },
+
+  // 从广场下架
+  async unpublish(cardId) {
+    try {
+      const resp = await fetch(`${this.BASE}/rest/v1/public_cards?id=eq.${encodeURIComponent(cardId)}`, {
+        method: 'DELETE', headers: { 'apikey': this.KEY, 'Authorization': `Bearer ${this.KEY}` }
+      });
+      if (!resp.ok) throw new Error('下架失败');
+      UI.toast('已从广场下架');
+    } catch(e) { UI.toast('❌ ' + e.message); }
+  },
+
+  // 浏览广场
+  async browse() {
+    const main = document.getElementById('mainContent');
+    main.innerHTML = '<div class="form-container"><h2>🏪 角色卡广场</h2><div style="text-align:center;padding:40px;color:var(--text-secondary);">⏳ 加载中...</div></div>';
+    try {
+      const resp = await fetch(`${this.BASE}/rest/v1/public_cards?select=*&order=created_at.desc&limit=50`, {
+        headers: { 'apikey': this.KEY, 'Authorization': `Bearer ${this.KEY}` }
+      });
+      if (!resp.ok) throw new Error('加载失败');
+      const cards = await resp.json();
+      if (cards.length === 0) {
+        main.innerHTML = `<div class="form-container" style="text-align:center;">
+          <h2>🏪 角色卡广场</h2>
+          <div style="padding:60px 20px;color:var(--text-secondary);">
+            <div style="font-size:3rem;margin-bottom:12px;">📭</div>
+            <p>广场还是空的，去发布第一张角色卡吧！</p>
+            <button class="btn-start" onclick="UI.renderDefault()" style="margin-top:16px;">← 返回</button>
+          </div></div>`;
+        return;
+      }
+      main.innerHTML = `
+        <div class="form-container" style="max-width:900px;">
+          <h2>🏪 角色卡广场 <span style="font-size:0.7rem;color:var(--text-secondary);">${cards.length} 张卡片</span></h2>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:30px;">
+            ${cards.map(c => {
+              const d = c.card_data;
+              const tags = (d.tags || []).slice(0,3).map(t => UI.esc(t)).join(' · ');
+              const hasLocally = Storage.getCard(c.id);
+              return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;display:flex;flex-direction:column;gap:8px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="font-size:1.5rem;">${UI.esc(d.cover || '📖')}</span>
+                  <div>
+                    <div style="font-weight:700;font-size:0.9rem;">${UI.esc(d.name)}</div>
+                    <div style="font-size:0.7rem;color:var(--text-secondary);">${UI.esc(d.identity || '').slice(0,30)}</div>
+                  </div>
+                </div>
+                ${tags ? `<div style="font-size:0.68rem;color:var(--accent);">🏷️ ${tags}</div>` : ''}
+                <div style="font-size:0.75rem;color:var(--text-secondary);line-height:1.5;flex:1;">${UI.esc((d.background||'').slice(0,80))}...</div>
+                <div style="display:flex;gap:6px;margin-top:auto;">
+                  ${hasLocally
+                    ? `<button class="btn-secondary" style="flex:1;padding:6px;font-size:0.75rem;" disabled>✅ 已拥有</button>`
+                    : `<button class="btn-primary" style="flex:1;padding:6px;font-size:0.75rem;" onclick="Marketplace.importCard('${UI.escAttr(c.id)}')">📥 导入</button>`
+                  }
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+          <button class="btn-secondary" onclick="UI.renderDefault()">← 返回</button>
+        </div>`;
+    } catch(e) {
+      main.innerHTML = `<div class="form-container" style="text-align:center;"><h2>🏪 角色卡广场</h2><div style="padding:40px;color:var(--danger);">❌ 加载失败：${e.message}</div><button class="btn-secondary" onclick="UI.renderDefault()">← 返回</button></div>`;
+    }
+  },
+
+  // 从广场导入
+  async importCard(cardId) {
+    try {
+      const resp = await fetch(`${this.BASE}/rest/v1/public_cards?id=eq.${encodeURIComponent(cardId)}&select=card_data`, {
+        headers: { 'apikey': this.KEY, 'Authorization': `Bearer ${this.KEY}` }
+      });
+      if (!resp.ok) throw new Error('加载失败');
+      const data = await resp.json();
+      if (!data.length) throw new Error('卡片不存在');
+      const d = data[0].card_data;
+      const card = {
+        id: cardId,
+        name: d.name, cover: d.cover || '📖',
+        identity: d.identity || '', appearance: d.appearance || '',
+        personality: d.personality || '', languageStyle: d.languageStyle || '',
+        tags: d.tags || [], background: d.background || '',
+        customSettings: d.customSettings || '', outline: d.outline || '',
+        memoryRounds: d.memoryRounds || 20, worldBook: d.worldBook || [],
+        customFields: d.customFields || [], storyHistory: []
+      };
+      Storage.upsertCard(card);
+      UI.render(); UI.openCard(card.id);
+      UI.toast('✅ 已导入「' + card.name + '」');
+    } catch(e) { UI.toast('❌ ' + e.message); }
   }
 };
 
