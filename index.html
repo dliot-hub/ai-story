@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI Story Weaver - 互动小说</title>
+<meta name="description" content="AI 互动小说平台 - 创建角色卡，开启专属故事">
+<meta name="theme-color" content="#c9a96e">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
 /* ========================================
    CSS 变量 & 全局
@@ -476,6 +481,9 @@ body {
   <div class="search-box">
     <input type="text" id="searchInput" placeholder="🔍 搜索角色卡..." oninput="UI.renderCardList()">
   </div>
+  <div class="search-box" id="tagFilters" style="display:flex;flex-wrap:wrap;gap:4px;padding:6px 16px;border-bottom:1px solid var(--border);">
+    <button class="tag-pill active" onclick="UI.filterTag('')" style="font-size:0.68rem;padding:3px 8px;border-radius:12px;border:1px solid var(--border);background:var(--accent);color:#1a1a2e;cursor:pointer;">全部</button>
+  </div>
   <div class="card-list" id="cardList"></div>
   <div class="sidebar-footer">
     <button class="btn-import" onclick="ImportExport.importCard()">📥 导入</button>
@@ -759,6 +767,7 @@ function exportCardForShare(card) {
     appearance: card.appearance || '',
     personality: card.personality || '',
     languageStyle: card.languageStyle || '',
+    tags: card.tags || [],
     background: card.background || '',
     customSettings: card.customSettings || '',
     outline: card.outline || '',
@@ -974,6 +983,7 @@ const UI = {
       this.renderDefault();
     }
     this.renderCardList();
+    this.renderTagFilters();
     this.updateApiStatus();
   },
 
@@ -1006,6 +1016,31 @@ const UI = {
   },
 
   // ========== 侧边栏 ==========
+  _filterTag: '',
+
+  filterTag(tag) {
+    this._filterTag = tag;
+    this.renderCardList();
+    this.renderTagFilters();
+  },
+
+  renderTagFilters() {
+    const bar = document.getElementById('tagFilters');
+    if (!bar) return;
+    const cards = Storage.getCards();
+    const allTags = new Set();
+    for (const c of cards) {
+      if (c.tags) c.tags.forEach(t => allTags.add(t));
+    }
+    const popular = [...allTags].slice(0, 15);
+    bar.innerHTML = `
+      <button class="tag-pill${!this._filterTag?' active':''}" onclick="UI.filterTag('')" style="font-size:0.68rem;padding:3px 8px;border-radius:12px;border:1px solid var(--border);background:${!this._filterTag?'var(--accent)':'transparent'};color:${!this._filterTag?'#1a1a2e':'var(--text-secondary)'};cursor:pointer;">全部</button>
+      ${popular.map(t => `
+        <button class="tag-pill${this._filterTag===t?' active':''}" onclick="UI.filterTag('${UI.escAttr(t)}')" style="font-size:0.68rem;padding:3px 8px;border-radius:12px;border:1px solid var(--border);background:${this._filterTag===t?'var(--accent)':'transparent'};color:${this._filterTag===t?'#1a1a2e':'var(--text-secondary)'};cursor:pointer;">${UI.esc(t)}</button>
+      `).join('')}
+    `;
+  },
+
   renderCardList() {
     const container = document.getElementById('cardList');
     const searchTerm = (document.getElementById('searchInput')?.value || '').toLowerCase();
@@ -1016,8 +1051,12 @@ const UI = {
       cards = cards.filter(c =>
         c.name.toLowerCase().includes(searchTerm) ||
         (c.personality || '').toLowerCase().includes(searchTerm) ||
-        (c.background || '').toLowerCase().includes(searchTerm)
+        (c.background || '').toLowerCase().includes(searchTerm) ||
+        (c.tags || []).some(t => t.toLowerCase().includes(searchTerm))
       );
+    }
+    if (this._filterTag) {
+      cards = cards.filter(c => (c.tags || []).includes(this._filterTag));
     }
 
     if (cards.length === 0) {
@@ -1030,12 +1069,14 @@ const UI = {
     container.innerHTML = cards.map(c => {
       const rounds = (c.storyHistory || []).length;
       const tags = c.personality ? c.personality.split(/[,，、]/).slice(0, 3).map(t => t.trim()).filter(Boolean).join(' · ') : '';
+      const catTags = (c.tags || []).slice(0, 3).join(' · ');
       return `
         <div class="card-item${c.id === this.currentCardId ? ' active' : ''}" onclick="UI.openCard('${c.id}')">
           <span class="card-cover">${c.cover || '📖'}</span>
           <span class="card-name">${this.esc(c.name)}</span>
           <div class="card-meta"><span>${this.fmtDate(c.updatedAt)}</span><span>${rounds} 回合</span></div>
           ${tags ? `<div class="card-tags">${this.esc(tags)}</div>` : ''}
+          ${catTags ? `<div style="font-size:0.65rem;color:var(--text-secondary);margin-top:1px;">🏷️ ${this.esc(catTags)}</div>` : ''}
           <div class="card-actions" onclick="event.stopPropagation()">
             <button class="export-btn" onclick="ImportExport.exportCard('${c.id}')" title="导出JSON">📤</button>
             <button class="edit-btn" onclick="UI.showEditForm('${c.id}')" title="编辑">✎</button>
@@ -1116,6 +1157,10 @@ const UI = {
           <label>语言风格 <span class="hint">（说话方式、口头禅）</span></label>
           <input type="text" id="cardLanguageStyle" placeholder="粗嗓门,话少,偶尔冒出老家方言" value="${this.esc(card.languageStyle || '')}">
         </div>
+      </div>
+      <div class="form-group">
+        <label>🏷️ 分类标签 <span class="hint">（逗号分隔，用于筛选和搜索）</span></label>
+        <input type="text" id="cardTags" placeholder="恐怖,悬疑,推理,都市" value="${this.esc((card.tags || []).join(', '))}">
       </div>
     </div>
 
@@ -1274,6 +1319,7 @@ const UI = {
     const appearance = document.getElementById('cardAppearance').value.trim();
     const personality = document.getElementById('cardPersonality').value.trim();
     const languageStyle = document.getElementById('cardLanguageStyle').value.trim();
+    const tags = document.getElementById('cardTags').value.split(/[,，、]/).map(t => t.trim()).filter(Boolean);
     const background = document.getElementById('cardBackground').value.trim();
     const outline = document.getElementById('cardOutline').value.trim();
     const customSettings = document.getElementById('cardCustomSettings').value.trim();
@@ -1290,6 +1336,7 @@ const UI = {
       appearance,
       personality,
       languageStyle,
+      tags,
       background,
       customSettings,
       outline,
@@ -2522,6 +2569,11 @@ async function init() {
   console.log('   - JSON 导入/导出');
 }
 init();
+
+// 注册 PWA Service Worker
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('sw.js');
+}
 </script>
 </body>
 </html>
